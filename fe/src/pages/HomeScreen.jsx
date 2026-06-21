@@ -1,7 +1,8 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { categories } from "../data/siteData";
 import BookCard from "../components/common/BookCard";
 import { useBooks } from "../hooks/useBooks";
+import { configApi } from "../services/configApi";
 
 const categoryIcons = {
   economics: (
@@ -36,8 +37,37 @@ function BookCardSkeleton() {
   );
 }
 
+// Skeleton loader cho category card
+function CategorySkeleton() {
+  return (
+    <div className="animate-pulse lb-category-card">
+      <div className="w-12 h-12 bg-slate-200 rounded-xl mx-auto mb-3" />
+      <div className="h-3 bg-slate-200 rounded w-3/4 mx-auto mb-2" />
+      <div className="h-2 bg-slate-200 rounded w-1/2 mx-auto" />
+    </div>
+  );
+}
+
 export default function HomeScreen() {
   const { books, loading } = useBooks({ limit: 10 });
+  const [categories, setCategories] = useState([]);
+  const [catLoading, setCatLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCategories = async () => {
+      try {
+        const data = await configApi.getCategories();
+        if (!cancelled) setCategories(data);
+      } catch (err) {
+        console.error("HomeScreen: Lỗi tải danh mục:", err);
+      } finally {
+        if (!cancelled) setCatLoading(false);
+      }
+    };
+    fetchCategories();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="relative flex flex-col gap-12 py-6">
@@ -148,7 +178,7 @@ export default function HomeScreen() {
         ))}
       </section>
 
-      {/* --- Danh mục --- */}
+      {/* --- Danh mục (từ BE API) --- */}
       <section>
         <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
           <div>
@@ -161,29 +191,32 @@ export default function HomeScreen() {
           </Link>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {categories.map((c, index) => (
-            <Link
-              key={c.id}
-              to={`/kham-pha?danh-muc=${c.id}`}
-              className="lb-category-card group"
-              style={{ animationDelay: `${index * 60}ms` }}
-            >
-              <span className="lb-category-glow" />
-              <div className="lb-category-icon">
-                {categoryIcons[c.id] || categoryIcons.language}
-              </div>
-              <div className="text-center">
-                <span className="block font-semibold text-slate-900 text-sm">{c.name}</span>
-                <span className="lb-category-count">
-                  {books.filter((b) => b.category === c.id).length} tài liệu
-                </span>
-              </div>
-            </Link>
-          ))}
+          {catLoading
+            ? Array.from({ length: 6 }).map((_, i) => <CategorySkeleton key={i} />)
+            : categories.map((c, index) => (
+                <Link
+                  key={c.id}
+                  to={`/kham-pha?danh-muc=${c.id}`}
+                  className="lb-category-card group"
+                  style={{ animationDelay: `${index * 60}ms` }}
+                >
+                  <span className="lb-category-glow" />
+                  <div className="lb-category-icon">
+                    {categoryIcons[c.id] || categoryIcons.language}
+                  </div>
+                  <div className="text-center">
+                    <span className="block font-semibold text-slate-900 text-sm">{c.name}</span>
+                    <span className="lb-category-count">
+                      {c.booksCount || 0} tài liệu
+                    </span>
+                  </div>
+                </Link>
+              ))
+          }
         </div>
       </section>
 
-      {/* --- Đăng bán gần đây --- */}
+      {/* --- Đăng bán gần đây (từ BE API) --- */}
       <section>
         <div className="flex items-center justify-between mb-5">
           <div>

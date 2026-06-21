@@ -1,5 +1,14 @@
 package com.loopbook.be_api.services;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopbook.be_api.dtos.CreateListingRequest;
@@ -7,15 +16,6 @@ import com.loopbook.be_api.dtos.ListingResponse;
 import com.loopbook.be_api.dtos.UpdateListingRequest;
 import com.loopbook.be_api.entities.Book;
 import com.loopbook.be_api.repositories.BookRepository;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
 
 @Service
 public class BookService {
@@ -154,14 +154,41 @@ public class BookService {
             Integer maxPrice, 
             String sort) {
         
-        // Nếu không có filter, dùng method cũ
+        // Không có filter → findAll
         if (status == null && category == null && school == null && 
             minPrice == null && maxPrice == null) {
             return getListings(pageable);
         }
         
-        // Xây dựng query với filters
-        // Tạm thời trả về findAll, cần implement custom query sau
+        // Nếu chỉ lọc theo status (trường hợp phổ biến nhất: active)
+        if (status != null && category == null && school == null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusOrderByCreatedAtDesc(status, pageable)
+                    .map(this::mapToResponse);
+        }
+        
+        // Lọc theo status + category
+        if (status != null && category != null && school == null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusAndCategoryOrderByCreatedAtDesc(status, category, pageable)
+                    .map(this::mapToResponse);
+        }
+        
+        // Lọc theo status + school
+        if (status != null && school != null && category == null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusAndSchoolOrderByCreatedAtDesc(status, school, pageable)
+                    .map(this::mapToResponse);
+        }
+        
+        // Lọc theo status + category + school
+        if (status != null && category != null && school != null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusAndCategoryAndSchoolOrderByCreatedAtDesc(status, category, school, pageable)
+                    .map(this::mapToResponse);
+        }
+        
+        // Fallback cho các trường hợp có price filter: dùng findAll (cần custom query phức tạp hơn)
         return bookRepository.findAll(pageable).map(this::mapToResponse);
     }
     

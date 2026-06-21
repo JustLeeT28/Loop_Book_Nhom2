@@ -52,7 +52,7 @@ public class ConfigService {
     }
     
     public List<Map<String, Object>> getCategories() {
-        List<Category> categories = categoryRepository.findByIsActiveTrueOrderByOrderAsc();
+        List<Category> categories = categoryRepository.findActiveCategoriesOrderByOrder();
         return categories.stream()
             .map(this::mapCategoryToMap)
             .collect(Collectors.toList());
@@ -79,6 +79,10 @@ public class ConfigService {
         map.put("id", category.getId());
         map.put("name", category.getName());
         map.put("accent", category.getAccent());
+        map.put("booksCount", category.getBooksCount());
+        if (category.getIcon() != null) {
+            map.put("icon", category.getIcon());
+        }
         if (category.getSlug() != null) {
             map.put("slug", category.getSlug());
         }
