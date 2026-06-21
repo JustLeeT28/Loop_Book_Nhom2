@@ -31,7 +31,10 @@ public class SecurityConfig {
                 // Permit all config endpoints
                 .requestMatchers("/api/config/**").permitAll()
                 // Permit OPTIONS requests (CORS preflight)
-                .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+                // Public profile viewing (GET /api/users/{userId})
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/users/{userId}").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/users/*").permitAll()
                 // All other endpoints require authentication
                 .anyRequest().authenticated()
             )
