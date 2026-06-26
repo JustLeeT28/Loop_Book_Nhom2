@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.DynamicInsert;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.Column;
@@ -13,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
+@DynamicInsert
 @Table(name = "lb_transactions")
 public class Transaction {
 
@@ -54,14 +56,14 @@ public class Transaction {
     @Column(name = "seller_id")
     private UUID sellerId;
 
-    @Column(name = "fee_amount")
-    private Integer feeAmount;
+    @Column(name = "fee_amount", nullable = false)
+    private Integer feeAmount = 0;
 
-    @Column(name = "fee_rate", precision = 5, scale = 2)
-    private BigDecimal feeRate;
+    @Column(name = "fee_rate", precision = 5, scale = 2, nullable = false)
+    private BigDecimal feeRate = BigDecimal.ZERO;
 
-    @Column(name = "net_amount")
-    private Integer netAmount;
+    @Column(name = "net_amount", nullable = false)
+    private Integer netAmount = 0;
 
     @Column(nullable = false)
     private String type;
