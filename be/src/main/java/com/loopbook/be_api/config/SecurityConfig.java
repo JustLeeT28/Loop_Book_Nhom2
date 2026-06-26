@@ -55,6 +55,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/listings/**").permitAll()
                 // Public favorite count (GET /api/favorites/count/{bookId})
                 .requestMatchers(HttpMethod.GET, "/api/favorites/count/**").permitAll()
+                // Public review viewing (GET /api/reviews/book/{bookId})
+                .requestMatchers(HttpMethod.GET, "/api/reviews/book/**").permitAll()
                 // Public profile viewing (GET /api/users/{userId})
                 .requestMatchers(HttpMethod.GET, "/api/users/{userId}").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/users/*").permitAll()

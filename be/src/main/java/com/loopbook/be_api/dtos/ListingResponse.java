@@ -57,6 +57,8 @@ public class ListingResponse {
     @JsonProperty("sellerId")
     private String sellerId;
     
+    private SellerInfo seller;
+    
     private LocalDateTime createdAt;
     
     private LocalDateTime updatedAt;
@@ -70,4 +72,16 @@ public class ListingResponse {
     private Integer favoriteCount;
     
     private String rejectReason;
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SellerInfo {
+        private String id;
+        private String name;
+        private String avatarUrl;
+        private BigDecimal rating;
+        private Integer salesCount;
+    }
 }

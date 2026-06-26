@@ -15,16 +15,20 @@ import com.loopbook.be_api.dtos.CreateListingRequest;
 import com.loopbook.be_api.dtos.ListingResponse;
 import com.loopbook.be_api.dtos.UpdateListingRequest;
 import com.loopbook.be_api.entities.Book;
+import com.loopbook.be_api.entities.User;
 import com.loopbook.be_api.repositories.BookRepository;
+import com.loopbook.be_api.repositories.UserRepository;
 
 @Service
 public class BookService {
     
     private final BookRepository bookRepository;
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     
-    public BookService(BookRepository bookRepository, ObjectMapper objectMapper) {
+    public BookService(BookRepository bookRepository, UserRepository userRepository, ObjectMapper objectMapper) {
         this.bookRepository = bookRepository;
+        this.userRepository = userRepository;
         this.objectMapper = objectMapper;
     }
     
@@ -130,6 +134,11 @@ public class BookService {
                 .orElseThrow(() -> new RuntimeException("Listing not found"));
         return mapToResponse(book);
     }
+
+    public Book getBookEntityById(String bookId) {
+        return bookRepository.findById(bookId)
+                .orElseThrow(() -> new RuntimeException("Listing not found"));
+    }
     
     public Page<ListingResponse> getListingsByStatus(String status, Pageable pageable) {
         return bookRepository.findByStatusOrderByCreatedAtDesc(status, pageable)
@@ -154,10 +163,11 @@ public class BookService {
             Integer maxPrice, 
             String sort) {
         
-        // Không có filter → findAll
+        // Không có filter → mặc định chỉ hiện active (ẩn sách đã bán)
         if (status == null && category == null && school == null && 
             minPrice == null && maxPrice == null) {
-            return getListings(pageable);
+            return bookRepository.findByStatusOrderByCreatedAtDesc("active", pageable)
+                    .map(this::mapToResponse);
         }
         
         // Nếu chỉ lọc theo status (trường hợp phổ biến nhất: active)
@@ -228,6 +238,21 @@ public class BookService {
                             objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)) : 
                     new ArrayList<>();
             
+            // Build seller info
+            ListingResponse.SellerInfo sellerInfo = null;
+            if (book.getSellerId() != null) {
+                User seller = userRepository.findById(book.getSellerId()).orElse(null);
+                if (seller != null) {
+                    sellerInfo = ListingResponse.SellerInfo.builder()
+                            .id(seller.getId().toString())
+                            .name(seller.getName())
+                            .avatarUrl(seller.getAvatarUrl())
+                            .rating(seller.getRating())
+                            .salesCount(seller.getSalesCount())
+                            .build();
+                }
+            }
+            
             return ListingResponse.builder()
                     .id(book.getId())
                     .title(book.getTitle())
@@ -249,6 +274,7 @@ public class BookService {
                     .locationText(book.getLocationText())
                     .status(book.getStatus())
                     .sellerId(book.getSellerId().toString())
+                    .seller(sellerInfo)
                     .createdAt(book.getCreatedAt())
                     .updatedAt(book.getUpdatedAt())
                     .isSold(book.getIsSold())
