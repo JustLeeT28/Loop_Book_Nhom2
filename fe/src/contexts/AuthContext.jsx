@@ -154,10 +154,13 @@ export function AuthProvider({ children }) {
     return { error };
   };
 
+  const token = getAuthToken();
+
   const value = {
     user,
     userData,
     session,
+    token,
     loading,
     isAuthModalOpen,
     authModalMode,

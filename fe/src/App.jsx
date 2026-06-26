@@ -32,7 +32,7 @@ function AdminGuard({ children }) {
     );
   }
 
-  if (!userData || !['admin', 'moderator'].includes(userData.role)) {
+  if (!userData || !["admin", "moderator"].includes(userData.role)) {
     return <Navigate to="/" state={{ from: location }} replace />;
   }
 
@@ -40,57 +40,29 @@ function AdminGuard({ children }) {
 }
 
 export default function App() {
-    return ( <
-        BrowserRouter >
-        <
-        Routes > { /* Admin Routes */ } <
-        Route element = { < AdminGuard > < AdminLayout / > < /AdminGuard> }
-        path = "/admin" >
-        <
-        Route element = { < AdminDashboard / > }
-        index / >
-        <
-        Route element = { < UserManagement / > }
-        path = "users" / >
-        <
-        Route element = { < ListingManagement / > }
-        path = "listings" / >
-        <
-        Route element = { < CategoryManagement / > }
-        path = "categories" / >
-        <
-        Route element = { < TransactionManagement / > }
-        path = "transactions" / >
-        <
-        Route element = { < PremiumManagement / > }
-        path = "premium" / >
-        <
-        Route element = { < DisputeManagement / > }
-        path = "disputes" / >
-        <
-        Route element = { < ReportManagement / > }
-        path = "reports" / >
-        <
-        Route element = { < AdminSettings / > }
-        path = "settings" / >
-        <
-        /Route>
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Admin Routes */}
+        <Route element={<AdminGuard><AdminLayout /></AdminGuard>} path="/admin">
+          <Route element={<AdminDashboard />} index />
+          <Route element={<UserManagement />} path="users" />
+          <Route element={<ListingManagement />} path="listings" />
+          <Route element={<CategoryManagement />} path="categories" />
+          <Route element={<TransactionManagement />} path="transactions" />
+          <Route element={<PremiumManagement />} path="premium" />
+          <Route element={<DisputeManagement />} path="disputes" />
+          <Route element={<ReportManagement />} path="reports" />
+          <Route element={<AdminSettings />} path="settings" />
+        </Route>
 
-        { /* Auth Routes */ } <
-        Route element = { < ForgotPasswordScreen / > }
-        path = "/forgot-password" / >
-        <
-        Route element = { < ResetPasswordScreen / > }
-        path = "/reset-password" / >
+        {/* Auth Routes */}
+        <Route element={<ForgotPasswordScreen />} path="/forgot-password" />
+        <Route element={<ResetPasswordScreen />} path="/reset-password" />
 
-        { /* Main App Routes */ }
-        <Route element={<AppShell />} path="/checkout/:bookId" />
-        <Route element={<AppShell />} path="/transaction/:id/success" />
-        <Route element={<AppShell />} path="/my-transactions" />
-        <Route element={<AppShell />} path="/wallet" />
+        {/* Main App Routes — all sub‑routing is handled inside AppShell */}
         <Route element={<AppShell />} path="/*" />
-        <
-        /Routes> <
-        /BrowserRouter>
-    );
+      </Routes>
+    </BrowserRouter>
+  );
 }

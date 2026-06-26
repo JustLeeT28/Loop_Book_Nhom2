@@ -73,7 +73,7 @@ function ImageCarousel({ images, title }) {
 export default function BookDetailScreen() {
   const { bookId } = useParams();
   const navigate = useNavigate();
-  const { userData, session } = useAuth();
+  const { userData, session, token } = useAuth();
   const [offerValue, setOfferValue] = useState("");
   const [showOfferBox, setShowOfferBox] = useState(false);
 
@@ -297,15 +297,22 @@ export default function BookDetailScreen() {
 
           {/* Nút CTA chính */}
           <div className="flex flex-col gap-2.5 mb-5">
-            <button className="w-full py-3.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-lg transition-colors text-sm">
-              Mua ngay
-            </button>
-            <button
-              onClick={() => setShowOfferBox(!showOfferBox)}
-              className="w-full py-3 border border-teal-700 text-teal-700 hover:bg-teal-50 font-bold rounded-lg transition-colors text-sm"
-            >
-              Trả giá
-            </button>
+            {(!userData || userData.id !== book.sellerId) && (
+              <button
+                onClick={() => navigate(`/checkout/${bookId}`)}
+                className="w-full py-3.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-lg transition-colors text-sm"
+              >
+                Mua ngay
+              </button>
+            )}
+            {(!userData || userData.id !== book.sellerId) && (
+              <button
+                onClick={() => setShowOfferBox(!showOfferBox)}
+                className="w-full py-3 border border-teal-700 text-teal-700 hover:bg-teal-50 font-bold rounded-lg transition-colors text-sm"
+              >
+                Trả giá
+              </button>
+            )}
             <Link
               to="/tin-nhan"
               className="w-full py-3 border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold rounded-lg transition-colors text-sm text-center"

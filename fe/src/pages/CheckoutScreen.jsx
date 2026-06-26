@@ -1,14 +1,21 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { supabase } from "../services/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { formatPrice } from "../utils/formatters";
-import { createTransaction, processWalletPayment, getPaymentMethods } from "../services/payment";
+import { transactionApi } from "../services/transactionApi";
+import { walletApi } from "../services/walletApi";
+import { listingApi } from "../services/listingApi";
+
+const paymentMethods = [
+  { id: "wallet", label: "Ví LoopBook", description: "Thanh toán bằng số dư trong ví" },
+  { id: "cash", label: "Tiền mặt", description: "Thanh toán khi gặp mặt trực tiếp" },
+  { id: "bank_transfer", label: "Chuyển khoản", description: "Chuyển khoản ngân hàng" },
+];
 
 export default function CheckoutScreen() {
   const { bookId } = useParams();
   const navigate = useNavigate();
-  const { userData, showToast } = useAuth();
+  const { userData, token, showToast } = useAuth();
 
   const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,70 +24,73 @@ export default function CheckoutScreen() {
   const [wallet, setWallet] = useState(null);
   const [error, setError] = useState(null);
 
-  const paymentMethods = getPaymentMethods();
-
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        const { data: bookData, error: bookErr } = await supabase
-          .from("lb_books")
-          .select("*, seller:seller_id!inner(id, name)")
-          .eq("id", bookId)
-          .single();
-        if (bookErr) throw bookErr;
+        // Lấy chi tiết sách qua BE (không cần token, public API)
+        console.log("Fetching book:", bookId);
+        const bookData = await listingApi.getListingById(bookId);
+        console.log("Book data:", bookData);
         setBook(bookData);
 
-        if (userData) {
-          const { data: walletData } = await supabase
-            .from("lb_wallets")
-            .select("*")
-            .eq("user_id", userData.id)
-            .maybeSingle();
-          setWallet(walletData);
+        // Lấy ví người dùng qua BE (cần token, fail gracefully nếu chưa có ví)
+        if (token) {
+          try {
+            const walletData = await walletApi.getWallet(token);
+            setWallet(walletData);
+          } catch (walletErr) {
+            console.warn("Wallet fetch failed (user may not have wallet yet):", walletErr.message);
+            // User chưa có ví - vẫn cho phép checkout, chỉ không có thông tin số dư
+            setWallet({ balance: 0 });
+          }
+        } else {
+          console.warn("CheckoutScreen: No token available, wallet info skipped");
+          setWallet({ balance: 0 });
         }
       } catch (err) {
+        console.error("CheckoutScreen fetch error:", err.message);
         setError(err.message);
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, [bookId, userData]);
+  }, [bookId, token]);
 
   const handleSubmit = async () => {
-    if (!userData) {
+    if (!userData || !token) {
       showToast("Vui lòng đăng nhập để thanh toán.", "error");
+      return;
+    }
+    if (!book) {
+      showToast("Không tìm thấy thông tin sách.", "error");
       return;
     }
     setSubmitting(true);
     try {
-      const txn = await createTransaction(bookId, userData.id);
-      if (paymentMethod === "wallet") {
-        const result = await processWalletPayment(txn.id);
-        navigate(`/transaction/${result.id}/success`);
-      } else {
-        navigate(`/transaction/${txn.id}/success`);
-      }
+      console.log("Creating transaction...", { bookId, amount: book.price, paymentMethod });
+      const txn = await transactionApi.createTransaction(
+        {
+          bookId,
+          amount: book.price,
+          type: "buy",
+          paymentMethod,
+        },
+        token
+      );
+      console.log("Transaction created:", txn);
+
+      navigate(`/transaction/${txn.id}/success`);
       showToast("Đặt mua thành công!", "success");
     } catch (err) {
+      console.error("Transaction creation failed:", err.message);
       showToast(err.message || "Có lỗi xảy ra.", "error");
     } finally {
       setSubmitting(false);
     }
   };
-
-  if (!userData) {
-    return (
-      <div className="max-w-2xl mx-auto py-16 text-center">
-        <div className="inline-flex items-center justify-center w-20 h-20 bg-slate-100 rounded-full mb-6">
-          <svg className="w-10 h-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-        </div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-4">Bạn chưa đăng nhập</h2>
-        <p className="text-slate-600 mb-6">Vui lòng đăng nhập để tiếp tục thanh toán.</p>
-        <button onClick={() => navigate("/")} className="vinted-btn-outline w-auto px-8 mx-auto">Về trang chủ</button>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
@@ -93,8 +103,30 @@ export default function CheckoutScreen() {
   if (error || !book) {
     return (
       <div className="max-w-2xl mx-auto py-16 text-center">
-        <p className="text-slate-500">{error || "Không tìm thấy sách."}</p>
-        <button onClick={() => navigate("/")} className="vinted-btn-outline mt-4">Về trang chủ</button>
+        <div className="inline-flex items-center justify-center w-20 h-20 bg-red-50 rounded-full mb-6">
+          <svg className="w-10 h-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Không thể tải trang thanh toán</h2>
+        <p className="text-slate-500 mb-6 max-w-md mx-auto">{error || "Không tìm thấy thông tin sách. Vui lòng kiểm tra lại đường dẫn hoặc quay lại sau."}</p>
+        <div className="flex gap-3 justify-center">
+          <button onClick={() => navigate(-1)} className="px-6 py-2.5 font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm rounded-lg transition-colors text-sm">Quay lại</button>
+          <button onClick={() => navigate("/")} className="px-6 py-2.5 vinted-btn-primary text-sm">Về trang chủ</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userData) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 text-center">
+        <div className="inline-flex items-center justify-center w-20 h-20 bg-slate-100 rounded-full mb-6">
+          <svg className="w-10 h-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+        </div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-4">Bạn chưa đăng nhập</h2>
+        <p className="text-slate-600 mb-6">Vui lòng đăng nhập để tiếp tục thanh toán.</p>
+        <button onClick={() => navigate("/")} className="vinted-btn-outline w-auto px-8 mx-auto">Về trang chủ</button>
       </div>
     );
   }
@@ -113,7 +145,7 @@ export default function CheckoutScreen() {
           )}
           <div>
             <p className="font-semibold text-slate-900">{book.title}</p>
-            <p className="text-sm text-slate-500 mt-1">Người bán: {book.seller?.name || "—"}</p>
+            <p className="text-sm text-slate-500 mt-1">Người bán: {book.sellerName || "—"}</p>
             <p className="text-lg font-bold text-teal-700 mt-2">{formatPrice(book.price)}</p>
           </div>
         </div>

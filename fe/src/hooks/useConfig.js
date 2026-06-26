@@ -14,9 +14,9 @@ export function useConfig() {
       try {
         setLoading(true);
         const [conditions, deliveries, schools, cats] = await Promise.all([
-          configApi.getConditionOptions(),
-          configApi.getDeliveryOptions(),
-          configApi.getSchoolSuggestions(),
+          configApi.getConditions(),
+          configApi.getDeliveryMethods(),
+          configApi.getSchools(),
           configApi.getCategories(),
         ]);
         

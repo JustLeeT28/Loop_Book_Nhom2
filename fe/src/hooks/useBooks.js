@@ -39,14 +39,22 @@ export function useBooks(options = {}) {
           params.maxPrice = priceMax;
         }
         
-        // Sort
+        // Sort: giá trị khớp với switch case bên BookController
         if (sortBy === "price_asc") {
-          params.sort = "price,asc";
+          params.sort = "price_asc";
         } else if (sortBy === "price_desc") {
-          params.sort = "price,desc";
+          params.sort = "price_desc";
+        } else if (sortBy === "newest") {
+          params.sort = "newest";
+        } else if (sortBy === "oldest") {
+          params.sort = "oldest";
+        } else if (sortBy === "title_asc") {
+          params.sort = "title_asc";
+        } else if (sortBy === "title_desc") {
+          params.sort = "title_desc";
         } else {
           // Mặc định: mới nhất
-          params.sort = "createdAt,desc";
+          params.sort = "newest";
         }
 
         const response = await listingApi.getListings(params);
@@ -68,10 +76,23 @@ export function useBooks(options = {}) {
           created_at: b.createdAt,
           createdAt: b.createdAt,
           seller_id: b.sellerId,
-          seller: {
-            name: "Người bán", // Backend chưa trả thông tin seller
+          seller: b.seller || {
+            name: "Người bán",
             rating: "0.0",
           },
+          description: b.description,
+          author: b.author,
+          publisher: b.publisher,
+          edition: b.edition,
+          year: b.year,
+          allowOffers: b.allowOffers,
+          deliveryMethods: b.deliveryMethods,
+          tags: b.tags,
+          locationText: b.locationText,
+          status: b.status,
+          viewCount: b.viewCount,
+          favoriteCount: b.favoriteCount,
+          isSold: b.isSold,
         }));
 
         if (!cancelled) setBooks(normalized);

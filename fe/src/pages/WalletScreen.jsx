@@ -1,44 +1,37 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../services/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import { walletApi } from "../services/walletApi";
+import { transactionApi } from "../services/transactionApi";
 import { formatPrice } from "../utils/formatters";
 
 export default function WalletScreen() {
-  const { userData } = useAuth();
+  const { userData, token } = useAuth();
 
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!userData) {
+    if (!userData || !token) {
       setLoading(false);
       return;
     }
     const fetchWallet = async () => {
       try {
-        const { data: walletData } = await supabase
-          .from("lb_wallets")
-          .select("*")
-          .eq("user_id", userData.id)
-          .maybeSingle();
+        const walletData = await walletApi.getWallet(token);
         setWallet(walletData);
 
-        const { data: txnData } = await supabase
-          .from("lb_transactions")
-          .select("*, book:book_id(title)")
-          .or(`buyer_id.eq.${userData.id},seller_id.eq.${userData.id}`)
-          .order("created_at", { ascending: false });
+        const txnData = await transactionApi.getTransactions(token);
         setTransactions(txnData || []);
       } catch (err) {
-        console.error("wallet fetch error:", err.message);
+        console.error("wallet/transaction fetch error:", err.message);
       } finally {
         setLoading(false);
       }
     };
     fetchWallet();
-  }, [userData]);
+  }, [userData, token]);
 
   if (!userData) {
     return (
@@ -86,11 +79,11 @@ export default function WalletScreen() {
         <div className="flex gap-6 md:border-l md:border-teal-600 md:pl-8">
           <div>
             <p className="text-teal-200 text-xs font-medium mb-1">Tổng thu</p>
-            <p className="text-xl font-bold">{formatPrice(wallet?.total_in || 0)}</p>
+            <p className="text-xl font-bold text-green-300">+{formatPrice(wallet?.totalIn || 0)}</p>
           </div>
           <div>
             <p className="text-teal-200 text-xs font-medium mb-1">Tổng chi</p>
-            <p className="text-xl font-bold">{formatPrice(wallet?.total_out || 0)}</p>
+            <p className="text-xl font-bold text-red-300">-{formatPrice(wallet?.totalOut || 0)}</p>
           </div>
         </div>
       </div>
@@ -112,35 +105,38 @@ export default function WalletScreen() {
         ) : (
           <div className="divide-y divide-slate-100">
             {transactions.slice(0, 10).map((txn) => {
-              const isBuyer = txn.buyer_id === userData.id;
-              const isIn = !isBuyer && txn.status === "completed";
-              const isOut = isBuyer && txn.status === "completed";
+              const isBuyer = String(txn.buyerId || txn.buyer_id) === String(userData.id);
+              const bookName = typeof txn.book === "string" ? txn.book : txn.book?.title || "—";
+              const rawDate = txn.createdAt || txn.created_at;
+              const formattedDate = rawDate
+                ? new Date(rawDate).toLocaleDateString("vi-VN", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                  })
+                : "—";
               return (
                 <div key={txn.id} className="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors">
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    isIn ? "bg-green-100" : isOut ? "bg-red-100" : "bg-slate-100"
+                    isBuyer ? "bg-red-100" : "bg-green-100"
                   }`}>
-                    {isIn ? (
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19V5M5 12l7 7 7-7" /></svg>
-                    ) : isOut ? (
-                      <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v14M5 12l7-7 7 7" /></svg>
+                    {isBuyer ? (
+                      <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
                     ) : (
-                      <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-slate-900 text-sm">
-                      {isBuyer ? "Mua: " : "Bán: "}
-                      {txn.book?.title || "—"}
+                      <span className={`text-xs font-semibold mr-1 ${isBuyer ? "text-red-500" : "text-green-600"}`}>{isBuyer ? "Mua" : "Bán"}</span>
+                      {bookName}
                     </p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {new Date(txn.created_at).toLocaleDateString("vi-VN")}
-                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">{formattedDate}</p>
                   </div>
                   <span className={`font-bold text-sm ${
-                    isIn ? "text-green-600" : isOut ? "text-red-500" : "text-slate-400"
+                    isBuyer ? "text-red-500" : "text-green-600"
                   }`}>
-                    {isIn ? "+" : isOut ? "-" : ""}{formatPrice(txn.amount)}
+                    {isBuyer ? "-" : "+"}{formatPrice(txn.amount)}
                   </span>
                 </div>
               );
