@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { supabase } from "../services/supabase";
+import { transactionApi } from "../services/transactionApi";
 import { formatPrice } from "../utils/formatters";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -16,7 +16,7 @@ const statusConfig = {
 export default function TransactionSuccessScreen() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { userData } = useAuth();
+  const { userData, token } = useAuth();
 
   const [transaction, setTransaction] = useState(null);
   const [book, setBook] = useState(null);
@@ -26,20 +26,13 @@ export default function TransactionSuccessScreen() {
   useEffect(() => {
     const fetchTransaction = async () => {
       try {
-        const { data: txnData, error: txnErr } = await supabase
-          .from("lb_transactions")
-          .select("*")
-          .eq("id", id)
-          .single();
-        if (txnErr) throw txnErr;
+        const txnData = await transactionApi.getTransactionById(id, token);
         setTransaction(txnData);
 
-        if (txnData.book_id) {
-          const { data: bookData } = await supabase
-            .from("lb_books")
-            .select("title, price, images")
-            .eq("id", txnData.book_id)
-            .single();
+        // Nếu transaction có bookId thì fetch thông tin sách từ listingApi
+        if (txnData.bookId) {
+          const { listingApi } = await import("../services/listingApi");
+          const bookData = await listingApi.getListingById(txnData.bookId);
           setBook(bookData);
         }
       } catch (err) {
@@ -97,11 +90,11 @@ export default function TransactionSuccessScreen() {
           )}
           <div className="flex justify-between">
             <span className="text-sm text-slate-500">Số tiền</span>
-            <span className="text-sm font-bold text-slate-900">{formatPrice(transaction.amount)}</span>
+            <span className="text-sm font-bold text-slate-900">{formatPrice(transaction.amount || 0)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-sm text-slate-500">Phí giao dịch</span>
-            <span className="text-sm text-slate-600">{formatPrice(transaction.fee_amount)}</span>
+            <span className="text-sm text-slate-600">{formatPrice(transaction.fee_amount || 0)}</span>
           </div>
           <div className="flex justify-between pt-2 border-t border-slate-100">
             <span className="text-sm font-semibold text-slate-700">Trạng thái</span>

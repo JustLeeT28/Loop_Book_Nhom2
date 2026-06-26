@@ -1,12 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
-import { supabase } from "../services/supabase";
+import { useState, useEffect } from "react";
+import { listingApi } from "../services/listingApi";
 
 /**
- * Custom hook fetch sách từ Supabase với filter/sort.
- * @param {object} options - { category, school, priceMin, priceMax, sortBy, limit }
+ * Custom hook fetch sách từ Backend API với filter/sort.
+ * @param {object} options - { category, school, priceMin, priceMax, sortBy, limit, status }
  */
 export function useBooks(options = {}) {
-  const { category, school, priceMin, priceMax, sortBy, limit } = options;
+  const { category, school, priceMin, priceMax, sortBy, limit, status = 'active' } = options;
 
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,63 +18,87 @@ export function useBooks(options = {}) {
     const fetchBooks = async () => {
       setLoading(true);
       try {
-        let query = supabase
-          .from("lb_books")
-          .select(`
-            id, title, condition, price, original_price,
-            images, urgent, verified, school, category, created_at,
-            seller_id,
-            seller:seller_id!inner (name, rating_sum, rating_count)
-          `)
-          .eq("status", "active");
+        // Gọi API backend để lấy listings
+        const params = {
+          page: 0,
+          size: limit || 20,
+          status: status,
+        };
 
+        // Thêm filters nếu có
         if (category && category !== "all") {
-          query = query.eq("category", category);
+          params.category = category;
         }
         if (school && school !== "all") {
-          query = query.eq("school", school);
+          params.school = school;
         }
         if (priceMin != null && priceMin > 0) {
-          query = query.gte("price", priceMin);
+          params.minPrice = priceMin;
         }
         if (priceMax != null && priceMax !== Infinity) {
-          query = query.lte("price", priceMax);
+          params.maxPrice = priceMax;
         }
-
-        // Sắp xếp
+        
+        // Sort: giá trị khớp với switch case bên BookController
         if (sortBy === "price_asc") {
-          query = query.order("price", { ascending: true });
+          params.sort = "price_asc";
         } else if (sortBy === "price_desc") {
-          query = query.order("price", { ascending: false });
+          params.sort = "price_desc";
+        } else if (sortBy === "newest") {
+          params.sort = "newest";
+        } else if (sortBy === "oldest") {
+          params.sort = "oldest";
+        } else if (sortBy === "title_asc") {
+          params.sort = "title_asc";
+        } else if (sortBy === "title_desc") {
+          params.sort = "title_desc";
         } else {
           // Mặc định: mới nhất
-          query = query.order("created_at", { ascending: false });
+          params.sort = "newest";
         }
 
-        if (limit) {
-          query = query.limit(limit);
-        }
-
-        const { data, error: fetchError } = await query;
-        if (fetchError) throw fetchError;
+        const response = await listingApi.getListings(params);
+        const data = response.content || [];
 
         // Chuẩn hóa format để BookCard dùng được
-        const normalized = (data || []).map((b) => ({
-          ...b,
+        const normalized = data.map((b) => ({
+          id: b.id,
+          title: b.title,
+          condition: b.condition,
+          price: b.price,
+          originalPrice: b.originalPrice,
+          images: b.images || [],
           image: Array.isArray(b.images) && b.images.length > 0 ? b.images[0] : null,
-          originalPrice: b.original_price,
-          seller: {
-            name: b.seller?.name || "Người bán",
-            rating: b.seller && b.seller.rating_count > 0
-              ? (b.seller.rating_sum / b.seller.rating_count).toFixed(1)
-              : "0.0",
+          urgent: b.urgent,
+          verified: false, // Backend chưa có field này
+          school: b.school,
+          category: b.category,
+          created_at: b.createdAt,
+          createdAt: b.createdAt,
+          seller_id: b.sellerId,
+          seller: b.seller || {
+            name: "Người bán",
+            rating: "0.0",
           },
+          description: b.description,
+          author: b.author,
+          publisher: b.publisher,
+          edition: b.edition,
+          year: b.year,
+          allowOffers: b.allowOffers,
+          deliveryMethods: b.deliveryMethods,
+          tags: b.tags,
+          locationText: b.locationText,
+          status: b.status,
+          viewCount: b.viewCount,
+          favoriteCount: b.favoriteCount,
+          isSold: b.isSold,
         }));
 
         if (!cancelled) setBooks(normalized);
       } catch (err) {
         console.error("useBooks error:", err);
-        if (!cancelled) setError(err.message);
+        if (!cancelled) setError(err.message || "Không thể tải dữ liệu");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -82,7 +106,7 @@ export function useBooks(options = {}) {
 
     fetchBooks();
     return () => { cancelled = true; };
-  }, [category, school, priceMin, priceMax, sortBy, limit]);
+  }, [category, school, priceMin, priceMax, sortBy, limit, status]);
 
   return { books, loading, error };
 }

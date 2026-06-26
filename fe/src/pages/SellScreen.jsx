@@ -1,39 +1,13 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { categories } from "../data/siteData";
 import { useAuth } from "../contexts/AuthContext";
+import { useConfig } from "../hooks/useConfig";
 import { supabase } from "../services/supabase";
-
-const conditionOptions = [
-   { id: "brand_new", label: "Mới 100%" },
-   { id: "like_new", label: "Như mới 90-95%" },
-   { id: "very_good", label: "Rất tốt" },
-   { id: "good", label: "Tốt - Có ghi chú" },
-   { id: "acceptable", label: "Cũ" },
-];
-
-const deliveryOptions = [
-   { id: "meet", label: "Gặp trực tiếp" },
-   { id: "cod", label: "Ship COD" },
-   { id: "transfer", label: "Chuyển khoản trước" },
-];
-
-const schoolSuggestions = [
-   "Đại học Bách Khoa Hà Nội",
-   "Đại học Bách Khoa TP.HCM",
-   "Đại học Kinh tế Quốc dân",
-   "Đại học Ngoại thương",
-   "Đại học Kinh tế TP.HCM",
-   "Đại học Khoa học Xã hội và Nhân văn",
-   "Đại học Khoa học Tự nhiên",
-   "Đại học Sư phạm",
-   "Học viện Bưu chính Viễn thông",
-   "Học viện Tài chính",
-   "Học viện Nông nghiệp Việt Nam"
-];
+import { listingApi } from "../services/listingApi";
 
 export default function SellScreen() {
-   const { user, userData, showToast } = useAuth();
+   const { user, showToast, loading: authLoading } = useAuth();
+   const { conditionOptions, deliveryOptions, schoolSuggestions, categories, loading: configLoading } = useConfig();
    const navigate = useNavigate();
 
    // Khối 1: Cơ bản
@@ -66,7 +40,23 @@ export default function SellScreen() {
 
    const fileInputRef = useRef(null);
 
-    if (!userData) {
+   // Hiển thị loading khi đang check auth hoặc load config
+   if (authLoading || configLoading) {
+      return (
+         <div className="max-w-4xl mx-auto py-16 text-center">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-slate-100 rounded-full mb-6">
+               <svg className="w-10 h-10 text-slate-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+               </svg>
+            </div>
+            <p className="text-slate-600">Đang kiểm tra đăng nhập...</p>
+         </div>
+      );
+   }
+
+   // Check user sau khi authLoading = false
+   if (!user) {
       return (
          <div className="max-w-4xl mx-auto py-16 text-center">
             <div className="inline-flex items-center justify-center w-20 h-20 bg-slate-100 rounded-full mb-6">
@@ -145,18 +135,16 @@ export default function SellScreen() {
 
       setLoading(true);
       try {
-         // 1. Generate unique ID cho bài đăng
-         const bookId = `bk_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 6)}`;
          const numericPrice = price ? parseInt(price.replace(/,/g, ""), 10) : 0;
          const numericYear = year ? parseInt(year, 10) : null;
 
-         // 2. Upload TẤT CẢ ảnh lên Storage
+         // 1. Upload TẤT CẢ ảnh lên Supabase Storage
          const uploadedUrls = [];
          for (let i = 0; i < images.length; i++) {
             setUploadStep(`Đang tải ảnh ${i + 1}/${images.length}...`);
             const file = images[i].file;
             const fileExt = file.name.split('.').pop();
-            const fileName = `${bookId}_${i}.${fileExt}`;
+            const fileName = `${Date.now()}_${i}.${fileExt}`;
 
             const { error: uploadError } = await supabase.storage
                .from('books2')
@@ -169,51 +157,37 @@ export default function SellScreen() {
 
          setUploadStep("Đang lưu thông tin...");
 
-         // 3. Build tags array (jsonb - KHÔNG stringify)
-         const tags = [];
-         if (isUrgent) tags.push("Bán gấp");
-         if (allowOffers) tags.push("Cho phép trả giá");
-         selectedDeliveries.forEach(id => {
-            const method = deliveryOptions.find(d => d.id === id);
-            if (method) tags.push(method.label);
-         });
-         if (locationStr) tags.push(`Giao dịch: ${locationStr}`);
-         // Khi chọn "Khác", lưu tên môn vào tags (tránh vi phạm FK constraint)
-         if (category === 'other' && customCategory.trim()) {
-            tags.push(`Môn học: ${customCategory.trim()}`);
+         // 2. Determine category
+         const dbCategory = category === 'other' ? customCategory.trim() : category;
+
+         // 3. Create listing request object với URLs ảnh
+         const listingData = {
+            title: title.trim(),
+            description: description.trim() || null,
+            category: dbCategory,
+            condition: condition,
+            price: numericPrice,
+            images: uploadedUrls,
+            author: author.trim() || null,
+            publisher: publisher.trim() || null,
+            edition: edition.trim() || null,
+            school: school.trim() || null,
+            year: numericYear,
+            urgent: isUrgent,
+            allowOffers: allowOffers,
+            deliveryMethods: selectedDeliveries,
+            locationText: locationStr || null,
+            status: status,
+         };
+
+         // 4. Get auth token from Supabase
+         const { data: { session } } = await supabase.auth.getSession();
+         if (!session || !session.access_token) {
+            throw new Error("Bạn chưa đăng nhập");
          }
 
-          // 4. Xác định category
-          const dbCategory = category === 'other' ? null : category;
-
-          // 5. Insert DB
-          const { data: insertData, error } = await supabase
-             .from('lb_books')
-             .insert([{
-                id: bookId,
-                seller_id: userData.id,
-                title: title.trim(),
-                description: description.trim() || null,
-                category: dbCategory,
-                condition: condition,
-                price: numericPrice,
-                original_price: null,
-                images: uploadedUrls,
-                status: status,
-                author: author.trim() || null,
-                publisher: publisher.trim() || null,
-                edition: edition.trim() || null,
-                school: school.trim() || null,
-                year: numericYear,
-                urgent: isUrgent,
-                allow_offers: allowOffers,
-                delivery_methods: selectedDeliveries,
-                location_text: locationStr || null,
-                tags: tags,
-             }])
-             .select();
-
-         if (error) throw error;
+         // 5. Send to backend API
+         const response = await listingApi.createListing(listingData, session.access_token);
 
          showToast(status === 'draft' ? "Đã lưu nháp thành công!" : "Đăng bán thành công!", "success");
          navigate("/quan-ly");

@@ -11,6 +11,7 @@ import CheckoutScreen from "../../pages/CheckoutScreen";
 import TransactionSuccessScreen from "../../pages/TransactionSuccessScreen";
 import MyTransactionsScreen from "../../pages/MyTransactionsScreen";
 import PremiumScreen from "../../pages/PremiumScreen";
+import FavoritesScreen from "../../pages/FavoritesScreen";
 import TransactionsScreen from "../../pages/TransactionsScreen";
 import DashboardScreen from "../../pages/DashboardScreen";
 import ProfileScreen from "../../pages/ProfileScreen";
@@ -57,7 +58,8 @@ export default function AppShell() {
           <Route element={<MyTransactionsScreen />} path="/my-transactions" />
           <Route element={<PremiumScreen />} path="/dich-vu" />
           <Route element={<TransactionsScreen />} path="/giao-dich" />
-          <Route element={<ProfileScreen />} path="/profile" />
+           <Route element={<FavoritesScreen />} path="/yeu-thich" />
+           <Route element={<ProfileScreen />} path="/profile" />
 
           <Route element={<DashboardScreen />} path="/quan-ly" />
 
