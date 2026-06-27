@@ -1,18 +1,108 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { premiumPlans } from "../data/siteData";
 import { formatPrice } from "../utils/formatters";
+import { listingApi } from "../services/listingApi";
+import { useAuth } from "../contexts/AuthContext";
 import Page from "../components/layout/Page";
 
 export default function PremiumScreen() {
+  const { token, user, openLoginModal, showToast } = useAuth();
+  const navigate = useNavigate();
   const [selectedPlan, setSelectedPlan] = useState(premiumPlans[0].id);
   const [paymentMethod, setPaymentMethod] = useState("wallet");
+  const [myListings, setMyListings] = useState([]);
+  const [selectedListingId, setSelectedListingId] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const selected = premiumPlans.find((plan) => plan.id === selectedPlan) ?? premiumPlans[0];
 
   const paymentMethods = [
     { id: "wallet", label: "Ví LoopBook", icon: "💳" },
-    { id: "bank", label: "Chuyển khoản ngân hàng", icon: "🏦" },
-    { id: "card", label: "Thẻ tín dụng", icon: "💰" },
   ];
+
+  // Helper: extract array từ paginated response
+  const extractListings = useCallback((data) => {
+    if (!data) return [];
+    // Nếu response có field `content` (Spring Page)
+    if (data.content) return data.content;
+    // Nếu là plain array
+    if (Array.isArray(data)) return data;
+    // Nếu có field khác như `listings`, `data`
+    if (data.listings) return data.listings;
+    if (data.data) return data.data;
+    return [];
+  }, []);
+
+  // Fetch user's active listings
+  const fetchListings = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await listingApi.getUserListings(token, 0, 50);
+      const list = extractListings(data).filter(
+        (b) => b.status === "active"
+      );
+      setMyListings(list);
+      if (list.length > 0) {
+        // Giữ selectedListingId nếu vẫn còn trong danh sách, nếu không thì chọn cái đầu
+        setSelectedListingId((prev) =>
+          list.some((l) => l.id === prev) ? prev : list[0].id
+        );
+      } else {
+        setSelectedListingId("");
+      }
+    } catch (err) {
+      console.warn("Failed to fetch user listings:", err);
+    }
+  }, [token, extractListings]);
+
+  useEffect(() => {
+    fetchListings();
+  }, [fetchListings]);
+
+  const handleConfirmPayment = async () => {
+    setShowConfirm(false);
+    setProcessing(true);
+    try {
+      const plan = premiumPlans.find((p) => p.id === selectedPlan);
+
+      const result = await listingApi.boostListing(
+        selectedListingId,
+        plan.price,
+        plan.days,
+        token
+      );
+
+      showToast(result.message || "Kích hoạt dịch vụ thành công!");
+      // Refresh listings sau boost
+      fetchListings();
+      navigate("/success", {
+        state: {
+          type: "boost",
+          planName: plan.name,
+          amount: plan.price,
+          listingId: selectedListingId,
+        },
+      });
+    } catch (err) {
+      showToast(err.message || "Thanh toán thất bại!", "error");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handlePayment = () => {
+    if (!token) {
+      openLoginModal();
+      return;
+    }
+    if (!selectedListingId) {
+      showToast("Vui lòng chọn tin đăng cần đẩy tin!", "error");
+      return;
+    }
+    // Mở confirmation dialog
+    setShowConfirm(true);
+  };
 
   return (
     <Page
@@ -124,7 +214,30 @@ export default function PremiumScreen() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-600 font-medium">Thời hạn</span>
-                <span className="font-bold text-slate-900">30 ngày</span>
+                <span className="font-bold text-slate-900">{selected.days} ngày</span>
+              </div>
+              {/* Chọn tin đăng */}
+              <div className="pt-4 border-t border-slate-100">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Chọn tin đăng cần đẩy tin
+                </label>
+                {myListings.length > 0 ? (
+                  <select
+                    value={selectedListingId}
+                    onChange={(e) => setSelectedListingId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg bg-white px-3 py-2.5 font-medium text-slate-700 focus:outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-200 text-sm cursor-pointer transition-colors hover:border-slate-300"
+                  >
+                    {myListings.map((listing) => (
+                      <option key={listing.id} value={listing.id}>
+                        {listing.title} - {formatPrice(listing.price)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-sm text-slate-400 italic">
+                    Bạn chưa có tin đăng nào đang hoạt động.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -147,8 +260,16 @@ export default function PremiumScreen() {
             </div>
 
             {/* Nút xác nhận */}
-            <button className="w-full py-3.5 px-6 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-bold rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-              Xác nhận thanh toán ngay
+            <button
+              onClick={handlePayment}
+              disabled={processing}
+              className={`w-full py-3.5 px-6 font-bold rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 ${
+                processing
+                  ? "bg-slate-400 text-white cursor-not-allowed"
+                  : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white"
+              }`}
+            >
+              {processing ? "Đang xử lý..." : "Xác nhận thanh toán ngay"}
             </button>
 
             <p className="text-xs text-slate-500 text-center mt-4">
@@ -186,6 +307,73 @@ export default function PremiumScreen() {
           </div>
         </main>
       </div>
+
+      {/* ── Confirmation Dialog ── */}
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-teal-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Xác nhận thanh toán</h3>
+                <p className="text-sm text-slate-500">Vui lòng kiểm tra thông tin trước khi xác nhận</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 space-y-3 mb-6">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Gói dịch vụ</span>
+                <span className="font-semibold text-slate-900">{selected.name}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Thời hạn</span>
+                <span className="font-semibold text-slate-900">{selected.days} ngày</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Số tiền</span>
+                <span className="font-semibold text-teal-700">{formatPrice(selected.price)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Phương thức</span>
+                <span className="font-semibold text-slate-900">
+                  {paymentMethods.find(m => m.id === paymentMethod)?.label}
+                </span>
+              </div>
+              {selectedListingId && (() => {
+                const listing = myListings.find(l => l.id === selectedListingId);
+                return listing ? (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Tin đăng</span>
+                    <span className="font-semibold text-slate-900 text-right max-w-[200px] truncate">
+                      {listing.title}
+                    </span>
+                  </div>
+                ) : null;
+              })()}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 py-2.5 px-4 bg-white border border-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleConfirmPayment}
+                disabled={processing}
+                className="flex-1 py-2.5 px-4 bg-gradient-to-r from-teal-600 to-teal-700 text-white font-bold rounded-lg hover:from-teal-700 hover:to-teal-800 transition-all disabled:opacity-50"
+              >
+                {processing ? "Đang xử lý..." : "Xác nhận"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Page>
   );
 }
