@@ -1,21 +1,5 @@
 package com.loopbook.be_api.controllers;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
 import com.loopbook.be_api.entities.Book;
 import com.loopbook.be_api.entities.Transaction;
 import com.loopbook.be_api.entities.User;
@@ -24,6 +8,14 @@ import com.loopbook.be_api.security.JwtUtils;
 import com.loopbook.be_api.services.BookService;
 import com.loopbook.be_api.services.TransactionService;
 import com.loopbook.be_api.services.WalletService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/transactions")
@@ -32,15 +24,13 @@ public class TransactionController {
 
     private final TransactionService transactionService;
     private final BookService bookService;
-    private final WalletService walletService;
     private final JwtUtils jwtUtils;
     private final UserRepository userRepository;
 
     public TransactionController(TransactionService transactionService, BookService bookService,
-            WalletService walletService, JwtUtils jwtUtils, UserRepository userRepository) {
+                                 WalletService walletService, JwtUtils jwtUtils, UserRepository userRepository) {
         this.transactionService = transactionService;
         this.bookService = bookService;
-        this.walletService = walletService;
         this.jwtUtils = jwtUtils;
         this.userRepository = userRepository;
     }
@@ -130,5 +120,176 @@ public class TransactionController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @GetMapping("/filter")
+    public ResponseEntity<?> filterTransactions(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type) {
+
+        return ResponseEntity.ok(
+                transactionService.filter(status, type));
+    }
+
+    @PostMapping("/{id}/confirm")
+    public ResponseEntity<?> confirm(
+            @PathVariable String id) {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .confirmTransaction(id));
+    }
+
+    @PostMapping("/{id}/refund")
+    public ResponseEntity<?> refund(
+            @PathVariable String id,
+            @RequestHeader("Authorization")
+            String authHeader) {
+
+        try {
+
+            jwtUtils.extractUserIdFromToken(
+                    authHeader);
+
+            return ResponseEntity.ok(
+                    transactionService
+                            .refundTransaction(id));
+
+        } catch (Exception e) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of(
+                            "error",
+                            e.getMessage()));
+        }
+    }
+
+    // Create deposit request
+    @PostMapping("/topup")
+    public ResponseEntity<?> createTopup(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader("Authorization")
+            String authHeader) {
+
+        try {
+
+            UUID userId =
+                    jwtUtils.extractUserIdFromToken(
+                            authHeader);
+
+            Integer amount =
+                    ((Number) body.get("amount"))
+                            .intValue();
+
+            String paymentMethod =
+                    (String) body.get(
+                            "paymentMethod");
+
+            return ResponseEntity.ok(
+                    transactionService
+                            .createTopupRequest(
+                                    userId,
+                                    amount,
+                                    paymentMethod));
+
+        } catch (Exception e) {
+
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            e.getMessage()));
+        }
+    }
+
+    // Admin review deposit request
+    @GetMapping("/topup/pending")
+    public ResponseEntity<?> getPendingTopups() {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .getPendingTopups());
+    }
+
+    // Admin approve deposit request
+    @PostMapping("/topup/{id}/approve")
+    public ResponseEntity<?> approveTopup(
+            @PathVariable String id) {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .approveTopup(id));
+    }
+
+    // Admin reject deposit request
+    @PostMapping("/topup/{id}/reject")
+    public ResponseEntity<?> rejectTopup(
+            @PathVariable String id) {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .rejectTopup(id));
+    }
+
+    // History deposit request
+    @GetMapping("/topup/history")
+    public ResponseEntity<?> getHistory(
+            @RequestHeader("Authorization")
+            String authHeader) {
+
+        UUID userId =
+                jwtUtils.extractUserIdFromToken(
+                        authHeader);
+
+        return ResponseEntity.ok(
+                transactionService
+                        .getTopupHistory(
+                                userId));
+    }
+
+    // Buy subscriptions
+    @PostMapping("/package")
+    public ResponseEntity<?> purchasePackage(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader("Authorization")
+            String authHeader) {
+
+        try {
+
+            UUID userId =
+                    jwtUtils.extractUserIdFromToken(
+                            authHeader);
+
+            String packageName =
+                    (String) body.get(
+                            "packageName");
+
+            Integer amount =
+                    ((Number) body.get(
+                            "amount"))
+                            .intValue();
+
+            return ResponseEntity.ok(
+                    transactionService
+                            .purchasePackage(
+                                    userId,
+                                    packageName,
+                                    amount));
+
+        } catch (Exception e) {
+
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            e.getMessage()));
+        }
+    }
+    // Export report
+    @GetMapping("/admin/report")
+    public ResponseEntity<?> exportReport() {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .getAllTransactions());
     }
 }
