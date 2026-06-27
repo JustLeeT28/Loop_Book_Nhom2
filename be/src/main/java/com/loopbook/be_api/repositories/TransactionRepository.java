@@ -27,5 +27,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, String
     findByBuyerIdAndTypeOrderByCreatedAtDesc(
             UUID buyerId,
             String type);
+
     long countByStatus(String status);
+
+    List<Transaction> findByTypeAndStatus(
+            String type,
+            String status);
 }

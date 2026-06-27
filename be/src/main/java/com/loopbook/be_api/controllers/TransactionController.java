@@ -164,4 +164,86 @@ public class TransactionController {
                             e.getMessage()));
         }
     }
+
+    // Create deposit request
+    @PostMapping("/topup")
+    public ResponseEntity<?> createTopup(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader("Authorization")
+            String authHeader) {
+
+        try {
+
+            UUID userId =
+                    jwtUtils.extractUserIdFromToken(
+                            authHeader);
+
+            Integer amount =
+                    ((Number) body.get("amount"))
+                            .intValue();
+
+            String paymentMethod =
+                    (String) body.get(
+                            "paymentMethod");
+
+            return ResponseEntity.ok(
+                    transactionService
+                            .createTopupRequest(
+                                    userId,
+                                    amount,
+                                    paymentMethod));
+
+        } catch (Exception e) {
+
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            e.getMessage()));
+        }
+    }
+
+    // Admin review deposit request
+    @GetMapping("/topup/pending")
+    public ResponseEntity<?> getPendingTopups() {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .getPendingTopups());
+    }
+
+    // Admin approve deposit request
+    @PostMapping("/topup/{id}/approve")
+    public ResponseEntity<?> approveTopup(
+            @PathVariable String id) {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .approveTopup(id));
+    }
+
+    // Admin reject deposit request
+    @PostMapping("/topup/{id}/reject")
+    public ResponseEntity<?> rejectTopup(
+            @PathVariable String id) {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .rejectTopup(id));
+    }
+
+    // History deposit request
+    @GetMapping("/topup/history")
+    public ResponseEntity<?> getHistory(
+            @RequestHeader("Authorization")
+            String authHeader) {
+
+        UUID userId =
+                jwtUtils.extractUserIdFromToken(
+                        authHeader);
+
+        return ResponseEntity.ok(
+                transactionService
+                        .getTopupHistory(
+                                userId));
+    }
 }

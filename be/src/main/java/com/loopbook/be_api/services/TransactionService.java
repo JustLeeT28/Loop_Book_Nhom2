@@ -187,4 +187,105 @@ public class TransactionService {
                         userId,
                         "topup");
     }
+
+    // Create a deposit request
+    @Transactional
+    public Transaction createTopupRequest(
+            UUID userId,
+            Integer amount,
+            String paymentMethod) {
+
+        Transaction transaction =
+                new Transaction();
+
+        transaction.setId(
+                UUID.randomUUID().toString());
+
+        transaction.setBuyerId(userId);
+
+        transaction.setType("topup");
+
+        transaction.setStatus("pending");
+
+        transaction.setAmount(
+                String.valueOf(amount));
+
+        transaction.setPaymentMethod(
+                paymentMethod);
+
+        transaction.setBook("Nạp tiền ví");
+
+        transaction.setPartner("LoopBook");
+
+        transaction.setWhenTime(
+                LocalDateTime.now().toString());
+
+        transaction.setIsCompleted(false);
+
+        transaction.setNotes(
+                "Yêu cầu nạp tiền");
+
+        return transactionRepository.save(
+                transaction);
+    }
+
+    public List<Transaction> getPendingTopups() {
+
+        return transactionRepository
+                .findByTypeAndStatus(
+                        "topup",
+                        "pending");
+    }
+
+    // Approve deposit request
+    @Transactional
+    public Transaction approveTopup(
+            String transactionId) {
+
+        Transaction transaction =
+                getById(transactionId);
+
+        if (!"topup".equals(
+                transaction.getType())) {
+
+            throw new RuntimeException(
+                    "Invalid transaction type");
+        }
+
+        walletService.topUp(
+                transaction.getBuyerId(),
+                Integer.parseInt(
+                        transaction.getAmount()));
+
+        transaction.setStatus(
+                "completed");
+
+        transaction.setIsCompleted(
+                true);
+
+        transaction.setCompletedAt(
+                LocalDateTime.now());
+
+        return transactionRepository.save(
+                transaction);
+    }
+
+    // Reject deposit request
+    @Transactional
+    public Transaction rejectTopup(
+            String transactionId) {
+
+        Transaction transaction =
+                getById(transactionId);
+
+        transaction.setStatus(
+                "rejected");
+
+        transaction.setIsCompleted(
+                false);
+
+        return transactionRepository.save(
+                transaction);
+    }
+
 }
