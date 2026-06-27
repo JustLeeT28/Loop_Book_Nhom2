@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../services/supabase";
+import { userApi } from "../services/userApi";
 
 const AuthContext = createContext();
 
@@ -21,28 +22,52 @@ export function AuthProvider({ children }) {
 
   const [userData, setUserData] = useState(null);
 
+  // Lấy auth token từ session
+  const getAuthToken = () => {
+    return session?.access_token || null;
+  };
+
   useEffect(() => {
     const fetchUserData = async (authUser) => {
       if (!authUser) {
         setUserData(null);
         return;
       }
-      // Tìm user bằng id (lb_users.id = auth.users.id)
-      const { data, error } = await supabase
-        .from('lb_users')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle();
-      if (data) {
-        setUserData(data);
-      } else if (error && error.code !== 'PGRST116') {
-        console.warn('fetchUserData error:', error);
+      // Dùng BE API để lấy profile
+      try {
+        const token = session?.access_token;
+        if (token) {
+          const profile = await userApi.getMyProfile(token);
+          setUserData(profile);
+        }
+      } catch (err) {
+        console.warn('fetchUserData from BE error:', err);
+        // Fallback: tạo userData từ authUser nếu chưa có trên BE
+        setUserData({
+          id: authUser.id,
+          name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Người dùng',
+          email: authUser.email,
+        });
       }
     };
 
     const ensureUserRecord = async (authUser) => {
       if (!authUser) return;
-      // Kiểm tra đã có record chưa
+      // Thử lấy profile từ BE trước
+      try {
+        const token = session?.access_token;
+        if (token) {
+          const profile = await userApi.getMyProfile(token);
+          setUserData(profile);
+          return;
+        }
+      } catch (err) {
+        // Chưa có trên BE, cần sync
+      }
+      
+      // Fallback: dùng Supabase để tạo record (giữ sync với auth.users)
+      const email = authUser.email || '';
+      const name = authUser.user_metadata?.full_name || email.split('@')[0] || 'Người dùng';
       const { data: existing } = await supabase
         .from('lb_users')
         .select('*')
@@ -52,9 +77,6 @@ export function AuthProvider({ children }) {
         setUserData(existing);
         return;
       }
-      // Chưa có → tạo mới (lb_users.id = auth.users.id)
-      const email = authUser.email || '';
-      const name = authUser.user_metadata?.full_name || email.split('@')[0] || 'Người dùng';
       const { data: newUser, error } = await supabase
         .from('lb_users')
         .insert([{ id: authUser.id, name, email }])
@@ -64,8 +86,6 @@ export function AuthProvider({ children }) {
         console.warn('create user record error:', error);
       } else {
         setUserData(newUser);
-        // Tạo ví tự động
-        await supabase.from('lb_wallets').insert([{ user_id: newUser.id, balance: 0 }]).maybeSingle();
       }
     };
 
@@ -109,14 +129,17 @@ export function AuthProvider({ children }) {
   };
 
   const updateProfile = async (data) => {
-    const { error } = await supabase
-      .from('lb_users')
-      .update(data)
-      .eq('id', user.id);
-    if (!error && userData) {
-      setUserData({ ...userData, ...data });
+    try {
+      const token = getAuthToken();
+      if (!token) throw new Error('No auth token');
+      
+      const updatedProfile = await userApi.updateProfile(data, token);
+      setUserData(updatedProfile);
+      return { error: null };
+    } catch (err) {
+      console.warn('updateProfile via BE error:', err);
+      return { error: err.message || 'Failed to update profile' };
     }
-    return { error };
   };
 
   const resetPassword = async (email) => {
@@ -131,10 +154,13 @@ export function AuthProvider({ children }) {
     return { error };
   };
 
+  const token = getAuthToken();
+
   const value = {
     user,
     userData,
     session,
+    token,
     loading,
     isAuthModalOpen,
     authModalMode,
