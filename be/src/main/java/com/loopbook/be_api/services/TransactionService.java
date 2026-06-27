@@ -287,5 +287,62 @@ public class TransactionService {
         return transactionRepository.save(
                 transaction);
     }
+    // Buy subscriptions
+    @Transactional
+    public Transaction purchasePackage(
+            UUID userId,
+            String packageName,
+            Integer amount) {
+
+        // trừ tiền ví
+        walletService.deduct(
+                userId,
+                amount);
+
+        Transaction transaction =
+                new Transaction();
+
+        transaction.setId(
+                UUID.randomUUID().toString());
+
+        transaction.setBuyerId(userId);
+
+        transaction.setType("package");
+
+        transaction.setBook(
+                packageName);
+
+        transaction.setPartner(
+                "LoopBook");
+
+        transaction.setAmount(
+                String.valueOf(amount));
+
+        transaction.setStatus(
+                "completed");
+
+        transaction.setIsCompleted(
+                true);
+
+        transaction.setCompletedAt(
+                LocalDateTime.now());
+
+        transaction.setWhenTime(
+                LocalDateTime.now()
+                        .toString());
+
+        transaction.setNotes(
+                "Mua gói dịch vụ");
+
+        return transactionRepository.save(
+                transaction);
+    }
+    // Export report
+    public List<Transaction>
+    getAllTransactions() {
+
+        return transactionRepository
+                .findAll();
+    }
 
 }

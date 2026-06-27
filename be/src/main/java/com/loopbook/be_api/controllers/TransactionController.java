@@ -246,4 +246,50 @@ public class TransactionController {
                         .getTopupHistory(
                                 userId));
     }
+
+    // Buy subscriptions
+    @PostMapping("/package")
+    public ResponseEntity<?> purchasePackage(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader("Authorization")
+            String authHeader) {
+
+        try {
+
+            UUID userId =
+                    jwtUtils.extractUserIdFromToken(
+                            authHeader);
+
+            String packageName =
+                    (String) body.get(
+                            "packageName");
+
+            Integer amount =
+                    ((Number) body.get(
+                            "amount"))
+                            .intValue();
+
+            return ResponseEntity.ok(
+                    transactionService
+                            .purchasePackage(
+                                    userId,
+                                    packageName,
+                                    amount));
+
+        } catch (Exception e) {
+
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            e.getMessage()));
+        }
+    }
+    // Export report
+    @GetMapping("/admin/report")
+    public ResponseEntity<?> exportReport() {
+
+        return ResponseEntity.ok(
+                transactionService
+                        .getAllTransactions());
+    }
 }
