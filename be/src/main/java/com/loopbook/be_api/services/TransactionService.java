@@ -1,16 +1,15 @@
 package com.loopbook.be_api.services;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
-
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import com.loopbook.be_api.entities.Book;
 import com.loopbook.be_api.entities.Transaction;
 import com.loopbook.be_api.repositories.BookRepository;
 import com.loopbook.be_api.repositories.TransactionRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
 
 @Service
 public class TransactionService {
@@ -18,11 +17,13 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final WalletService walletService;
     private final BookRepository bookRepository;
+    private final TransactionService transactionService;
 
-    public TransactionService(TransactionRepository transactionRepository, WalletService walletService, BookRepository bookRepository) {
+    public TransactionService(TransactionRepository transactionRepository, WalletService walletService, BookRepository bookRepository, TransactionService transactionService) {
         this.transactionRepository = transactionRepository;
         this.walletService = walletService;
         this.bookRepository = bookRepository;
+        this.transactionService = transactionService;
     }
 
     @Transactional
@@ -102,5 +103,88 @@ public class TransactionService {
         Transaction transaction = getById(id);
         transaction.setStatus(status);
         return transactionRepository.save(transaction);
+    }
+
+    @Transactional
+    public Transaction confirmTransaction(
+            String id) {
+
+        Transaction transaction = getById(id);
+
+        transaction.setStatus("completed");
+        transaction.setIsCompleted(true);
+        transaction.setCompletedAt(
+                LocalDateTime.now());
+
+        return transactionRepository.save(
+                transaction);
+    }
+
+    public List<Transaction> filter(
+            String status,
+            String type) {
+
+        if (status != null && type != null) {
+            return transactionRepository
+                    .findByStatusAndType(status, type);
+        }
+
+        if (status != null) {
+            return transactionRepository
+                    .findByStatus(status);
+        }
+
+        if (type != null) {
+            return transactionRepository
+                    .findByType(type);
+        }
+
+        return transactionRepository.findAll();
+    }
+
+    @Transactional
+    public Transaction refundTransaction(String id) {
+
+        Transaction transaction = getById(id);
+
+        if ("refunded".equals(transaction.getStatus())) {
+            throw new RuntimeException(
+                    "Transaction already refunded");
+        }
+
+        if (!Boolean.TRUE.equals(
+                transaction.getIsCompleted())) {
+
+            throw new RuntimeException(
+                    "Transaction not completed");
+        }
+
+        int amount =
+                transaction.getNetAmount();
+
+        // trừ tiền người bán
+        walletService.deduct(
+                transaction.getSellerId(),
+                amount);
+
+        // hoàn tiền người mua
+        walletService.topUp(
+                transaction.getBuyerId(),
+                amount);
+
+        transaction.setStatus("refunded");
+
+        return transactionRepository
+                .save(transaction);
+    }
+
+    public List<Transaction>
+    getTopupHistory(
+            UUID userId) {
+
+        return transactionRepository
+                .findByBuyerIdAndTypeOrderByCreatedAtDesc(
+                        userId,
+                        "topup");
     }
 }

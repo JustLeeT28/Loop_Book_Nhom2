@@ -30,4 +30,6 @@ public interface BookRepository extends JpaRepository<Book, String> {
     Optional<Book> findByIdAndSellerId(String bookId, UUID sellerId);
 
     List<Book> findByStatus(String status);
+    long countByStatus(String status);
+
 }
