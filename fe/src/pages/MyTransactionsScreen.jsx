@@ -121,32 +121,50 @@ export default function MyTransactionsScreen() {
                     ? `${isBuyer ? "-" : "+"}${formatPrice(rawAmount)}`
                     : "—";
 
+                  const isBoost = txn.type === 'boost';
+
                   return (
                     <tr key={txn.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-4">
-                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
-                          isBuyer
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-orange-100 text-orange-700"
-                        }`}>
-                          {isBuyer ? (
-                            <>
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
-                              Mua
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                              Bán
-                            </>
-                          )}
-                        </span>
+                        {isBoost ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-700">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            Dịch vụ
+                          </span>
+                        ) : (
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                            isBuyer
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-orange-100 text-orange-700"
+                          }`}>
+                            {isBuyer ? (
+                              <>
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
+                                Mua
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                Bán
+                              </>
+                            )}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4 font-mono text-xs text-slate-500">{txn.id ? txn.id.substring(0, 8) + "..." : "—"}</td>
                       <td className="px-5 py-4">
                         <span className="font-medium text-slate-900 text-sm">{txn.book || "—"}</span>
+                        {isBoost && (
+                          <span className="text-xs text-violet-500 ml-1">(dịch vụ đẩy tin)</span>
+                        )}
                       </td>
-                      <td className="px-5 py-4 text-slate-600 text-sm">{txn.partner || "—"}</td>
+                      <td className="px-5 py-4 text-slate-600 text-sm">
+                        {isBoost ? (
+                          <span className="text-slate-400 italic">—</span>
+                        ) : (
+                          txn.partner || "—"
+                        )}
+                      </td>
                       <td className={`px-5 py-4 font-semibold whitespace-nowrap ${isBuyer ? "text-red-500" : "text-green-600"}`}>{displayAmount}</td>
                       <td className="px-5 py-4">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${status.color}`}>

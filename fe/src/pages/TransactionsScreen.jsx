@@ -1,19 +1,29 @@
 import { useEffect, useState } from "react";
-import { transactions } from "../data/siteData";
+import { useAuth } from "../contexts/AuthContext";
+import { transactionApi } from "../services/transactionApi";
+import { formatPrice } from "../utils/formatters";
 
 const statusConfig = {
-  "Đang chờ gặp trực tiếp": { label: "Chờ gặp mặt", color: "bg-yellow-100 text-yellow-700" },
-  "Đang xác nhận thanh toán": { label: "Xác nhận TT", color: "bg-blue-100 text-blue-700" },
-  "Hoàn tất": { label: "Hoàn tất", color: "bg-green-100 text-green-700" },
+  "pending": { label: "Chờ gặp mặt", color: "bg-yellow-100 text-yellow-700" },
+  "confirmed": { label: "Xác nhận TT", color: "bg-blue-100 text-blue-700" },
+  "completed": { label: "Hoàn tất", color: "bg-green-100 text-green-700" },
 };
 
+const DEFAULT_STATUS = { label: "Khác", color: "bg-slate-100 text-slate-600" };
+
+const TABS = [
+  { id: "all", label: "Tất cả" },
+  { id: "buy", label: "Mua" },
+  { id: "sell", label: "Bán" },
+  { id: "service", label: "Gói dịch vụ" },
+];
+
 function TransactionCard({ item, isCompleted }) {
-  const status = statusConfig[item.status] || { label: item.status, color: "bg-slate-100 text-slate-600" };
+  const status = statusConfig[item.status] || DEFAULT_STATUS;
   return (
     <div className="flex items-start gap-4 px-5 py-4 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
-      {/* Avatar người giao dịch */}
       <div className="w-10 h-10 rounded-full bg-teal-100 text-teal-700 font-bold flex items-center justify-center text-sm flex-shrink-0">
-        {item.partner.charAt(0)}
+        {(item.partner || "?").charAt(0)}
       </div>
 
       <div className="flex-1 min-w-0">
@@ -44,53 +54,102 @@ function TransactionCard({ item, isCompleted }) {
   );
 }
 
+function ServiceCard({ item }) {
+  return (
+    <div className="flex items-start gap-4 px-5 py-4 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
+      <div className="w-10 h-10 rounded-full bg-violet-100 text-violet-700 font-bold flex items-center justify-center text-sm flex-shrink-0">
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-slate-900 text-sm truncate">{item.book}</p>
+        <p className="text-xs text-slate-500 mt-0.5">Gói <span className="font-medium text-slate-700">{item.partner}</span></p>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Đã kích hoạt</span>
+          <span className="text-xs text-slate-400">{item.when}</span>
+        </div>
+      </div>
+
+      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+        <span className="font-bold text-sm text-violet-600">{item.amount}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatWhen(rawDate) {
+  if (!rawDate) return "";
+  try {
+    const d = new Date(rawDate);
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow =
+      d.getDate() === tomorrow.getDate() &&
+      d.getMonth() === tomorrow.getMonth() &&
+      d.getFullYear() === tomorrow.getFullYear();
+    const time = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    if (isToday) return `Hôm nay, ${time}`;
+    if (isTomorrow) return `Ngày mai, ${time}`;
+    return d.toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return rawDate;
+  }
+}
+
 export default function TransactionsScreen() {
+  const { userData, token } = useAuth();
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [reportReason, setReportReason] = useState("");
   
-  // Filters
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all"); // all, current, completed
+  const [activeTab, setActiveTab] = useState("all");
   const [sortBy, setSortBy] = useState("recent");
 
-  const allTransactions = [
-    ...transactions.current.map((t) => ({ ...t, _type: "current" })),
-    ...transactions.completed.map((t) => ({ ...t, _type: "completed" })),
-  ];
+  const [allTransactions, setAllTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const parseWhen = (value) => {
-    if (!value) return null;
-    const normalized = value.toLowerCase();
-
-    if (normalized.includes("hôm nay")) {
-      const now = new Date();
-      const timePart = value.split(",")[1]?.trim();
-      if (timePart) {
-        const [hours, minutes] = timePart.split(":").map((v) => Number(v));
-        now.setHours(hours || 0, minutes || 0, 0, 0);
+  useEffect(() => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    const fetchData = async () => {
+      try {
+        const data = await transactionApi.getTransactions(token);
+        const mapped = (data || []).map((t) => {
+          const isComp = t.isCompleted || t.status === "completed";
+          const isBoost = t.type === "boost";
+          const isBuyer = String(t.buyerId) === String(userData?.id);
+          return {
+            id: t.id,
+            book: t.book || "",
+            partner: t.partner || "",
+            status: t.status || "pending",
+            amount: formatPrice(t.amount),
+            when: formatWhen(t.whenTime || t.createdAt),
+            isCompleted: isComp,
+            isBoost,
+            role: isBoost ? "service" : isBuyer ? "buy" : "sell",
+          };
+        });
+        setAllTransactions(mapped);
+      } catch (err) {
+        console.error("Failed to load transactions:", err);
+      } finally {
+        setLoading(false);
       }
-      return now;
-    }
-
-    if (normalized.includes("ngày mai")) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const timePart = value.split(",")[1]?.trim();
-      if (timePart) {
-        const [hours, minutes] = timePart.split(":").map((v) => Number(v));
-        tomorrow.setHours(hours || 0, minutes || 0, 0, 0);
-      }
-      return tomorrow;
-    }
-
-    if (/\d{2}\/\d{2}\/\d{4}/.test(value)) {
-      const [day, month, year] = value.split("/").map((v) => Number(v));
-      return new Date(year, month - 1, day);
-    }
-
-    return null;
-  };
+    };
+    fetchData();
+  }, [token, userData?.id]);
 
   // Listen to custom event to open modal
   useEffect(() => {
@@ -104,131 +163,82 @@ export default function TransactionsScreen() {
 
   const handleSubmitReport = () => {
     if (!reportReason.trim()) return alert("Vui lòng nhập lý do khiếu nại.");
-    alert(`Đã gửi báo cáo khiếu nại cho giao dịch: ${selectedTransaction.book}\nLý do: ${reportReason}`);
+    alert(`Đã gửi báo cáo khiếu nại cho giao dịch: ${selectedTransaction?.book}\nLý do: ${reportReason}`);
     setReportModalOpen(false);
     setReportReason("");
     setSelectedTransaction(null);
   };
 
-  // Apply filters
+  // Filter by tab
   let filtered = allTransactions;
-  
-  if (typeFilter !== "all") {
-    filtered = filtered.filter(t => t._type === typeFilter);
+  if (activeTab !== "all") {
+    filtered = filtered.filter(t => t.role === activeTab);
   }
   
-  if (statusFilter !== "all") {
-    filtered = filtered.filter(t => t.status === statusFilter);
-  }
-  
-  // Apply sorting
+  // Sort
   if (sortBy === "recent") {
-    filtered.sort((a, b) => {
-      const dateA = parseWhen(a.when);
-      const dateB = parseWhen(b.when);
-      if (dateA && dateB) return dateB - dateA;
-      if (dateA) return -1;
-      if (dateB) return 1;
-      return 0;
-    });
+    filtered = [...filtered].sort((a, b) => (b.when || "").localeCompare(a.when || ""));
   } else if (sortBy === "oldest") {
-    filtered.sort((a, b) => {
-      const dateA = parseWhen(a.when);
-      const dateB = parseWhen(b.when);
-      if (dateA && dateB) return dateA - dateB;
-      if (dateA) return -1;
-      if (dateB) return 1;
-      return 0;
-    });
+    filtered = [...filtered].sort((a, b) => (a.when || "").localeCompare(b.when || ""));
   }
 
-  const hasFilter = statusFilter !== "all" || typeFilter !== "all";
+  const countByRole = (role) => allTransactions.filter(t => t.role === role).length;
 
-  const resetFilters = () => {
-    setStatusFilter("all");
-    setTypeFilter("all");
-    setSortBy("recent");
-  };
+  if (!token) {
+    return (
+      <div className="py-6 max-w-5xl mx-auto text-center">
+        <div className="py-16">
+          <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <p className="text-slate-500 font-medium">Vui lòng đăng nhập để xem giao dịch</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="py-6 flex flex-col lg:flex-row gap-8 max-w-5xl mx-auto">
       {/* ── Sidebar Bộ lọc ── */}
       <aside className="w-full lg:w-64 flex-shrink-0">
         <div className="sticky top-24 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Bộ lọc</h2>
-            {hasFilter && (
-              <button
-                onClick={resetFilters}
-                className="text-xs text-slate-500 hover:text-slate-700 font-medium hover:underline transition-colors"
-              >
-                Xoá tất cả
-              </button>
-            )}
-          </div>
+          <h2 className="text-lg font-bold text-slate-900">Bộ lọc</h2>
 
-          {/* Trạng thái */}
-          <div className="bg-white border border-slate-100 rounded-xl p-4">
-            <h3 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wide">
-              Trạng thái
-            </h3>
-            <ul className="space-y-2">
-              <li>
+          <div className="bg-white border border-slate-100 rounded-xl p-2">
+            {TABS.map((tab) => {
+              const count = tab.id === "all" 
+                ? allTransactions.length 
+                : countByRole(tab.id);
+              return (
                 <button
-                  onClick={() => setStatusFilter("all")}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all border ${
-                    statusFilter === "all"
-                      ? "bg-teal-50 text-teal-700 border-teal-200"
-                      : "text-slate-600 hover:bg-slate-50 border-transparent"
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-between ${
+                    activeTab === tab.id
+                      ? "bg-teal-50 text-teal-700"
+                      : "text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  Tất cả
+                  <span className="flex items-center gap-2">
+                    {tab.id === "buy" && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
+                    )}
+                    {tab.id === "sell" && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    )}
+                    {tab.id === "service" && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    )}
+                    {tab.label}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    activeTab === tab.id ? "bg-teal-100 text-teal-600" : "bg-slate-100 text-slate-500"
+                  }`}>{count}</span>
                 </button>
-              </li>
-              {Object.entries(statusConfig).map(([status, config]) => (
-                <li key={status}>
-                  <button
-                    onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all border ${
-                      statusFilter === status
-                        ? "bg-teal-50 text-teal-700 border-teal-200"
-                        : "text-slate-600 hover:bg-slate-50 border-transparent"
-                    }`}
-                  >
-                    <span className={`inline-block w-2 h-2 rounded-full mr-2 ${config.color.split(" ")[0]}`} />
-                    {config.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
+              );
+            })}
           </div>
 
-          {/* Loại giao dịch */}
-          <div className="bg-white border border-slate-100 rounded-xl p-4">
-            <h3 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wide">
-              Loại
-            </h3>
-            <ul className="space-y-2">
-              {[
-                { id: "all", label: "Tất cả" },
-                { id: "current", label: "Đang diễn ra" },
-                { id: "completed", label: "Hoàn tất" },
-              ].map((type) => (
-                <li key={type.id}>
-                  <button
-                    onClick={() => setTypeFilter(typeFilter === type.id ? "all" : type.id)}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all border ${
-                      typeFilter === type.id
-                        ? "bg-teal-50 text-teal-700 border-teal-200"
-                        : "text-slate-600 hover:bg-slate-50 border-transparent"
-                    }`}
-                  >
-                    {type.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       </aside>
 
@@ -251,32 +261,48 @@ export default function TransactionsScreen() {
         </div>
 
         {/* Thống kê nhanh */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-white border border-slate-200 rounded-xl p-4 text-center hover:border-slate-300 transition-colors">
-            <p className="text-2xl font-extrabold text-slate-900">{transactions.current.length}</p>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">Đang diễn ra</p>
+            <p className="text-2xl font-extrabold text-slate-900">{countByRole("buy")}</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">Mua</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-xl p-4 text-center hover:border-slate-300 transition-colors">
-            <p className="text-2xl font-extrabold text-green-600">{transactions.completed.length}</p>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">Hoàn tất</p>
+            <p className="text-2xl font-extrabold text-orange-600">{countByRole("sell")}</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">Bán</p>
           </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4 text-center hover:border-slate-300 transition-colors col-span-2 md:col-span-1">
-            <p className="text-2xl font-extrabold text-teal-700">209K</p>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">Tổng tháng này</p>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 text-center hover:border-slate-300 transition-colors">
+            <p className="text-2xl font-extrabold text-violet-600">{countByRole("service")}</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">Dịch vụ</p>
           </div>
         </div>
 
         {/* Transaction List */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="py-12 text-center text-slate-400">
               <svg className="w-10 h-10 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-              <p className="text-sm font-medium">Chưa có giao dịch nào khớp với bộ lọc</p>
+              <p className="text-sm font-medium">
+                {activeTab === "all" 
+                  ? "Chưa có giao dịch nào"
+                  : activeTab === "buy"
+                    ? "Chưa có giao dịch mua nào"
+                    : activeTab === "sell"
+                      ? "Chưa có giao dịch bán nào"
+                      : "Chưa mua gói dịch vụ nào"}
+              </p>
             </div>
           ) : (
-            filtered.map((item) => (
-              <TransactionCard key={item.id} item={item} isCompleted={item._type === "completed"} />
-            ))
+            filtered.map((item) =>
+              item.isBoost ? (
+                <ServiceCard key={item.id} item={item} />
+              ) : (
+                <TransactionCard key={item.id} item={item} isCompleted={item.isCompleted} />
+              )
+            )
           )}
         </div>
 
