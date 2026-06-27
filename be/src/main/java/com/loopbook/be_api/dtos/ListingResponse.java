@@ -42,6 +42,8 @@ public class ListingResponse {
     
     private Boolean urgent;
     
+    private LocalDateTime boostExpiry;
+    
     private Boolean allowOffers;
     
     private List<String> images;

@@ -1,21 +1,33 @@
 package com.loopbook.be_api.controllers;
 
-import com.loopbook.be_api.dtos.CreateListingRequest;
-import com.loopbook.be_api.dtos.ListingResponse;
-import com.loopbook.be_api.dtos.UpdateListingRequest;
-import com.loopbook.be_api.security.JwtUtils;
-import com.loopbook.be_api.services.BookService;
-import jakarta.validation.Valid;
+import java.util.Map;
+import java.util.UUID;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Map;
-import java.util.UUID;
+import com.loopbook.be_api.dtos.CreateListingRequest;
+import com.loopbook.be_api.dtos.ListingResponse;
+import com.loopbook.be_api.dtos.UpdateListingRequest;
+import com.loopbook.be_api.security.JwtUtils;
+import com.loopbook.be_api.services.BookService;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/listings")
@@ -150,6 +162,27 @@ public class BookController {
         Pageable pageable = PageRequest.of(page, size);
         Page<ListingResponse> listings = bookService.getListingsByStatus(status, pageable);
         return ResponseEntity.ok(listings);
+    }
+    
+    @PostMapping("/{bookId}/boost")
+    public ResponseEntity<?> boostListing(
+            @PathVariable String bookId,
+            @RequestBody Map<String, Integer> body,
+            @RequestHeader("Authorization") String authHeader) {
+        try {
+            UUID userId = jwtUtils.extractUserIdFromToken(authHeader);
+            int amount = body.getOrDefault("amount", 10000);
+            int days = body.getOrDefault("days", 7);
+            ListingResponse response = bookService.boostListing(bookId, userId, amount, days);
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", response,
+                "message", "Đã kích hoạt gói dịch vụ thành công!"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("success", false, "error", e.getMessage()));
+        }
     }
 
     // Admin endpoints

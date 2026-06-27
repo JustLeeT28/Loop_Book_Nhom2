@@ -56,6 +56,8 @@ public class Book {
     
     private Boolean urgent;
     
+    private LocalDateTime boostExpiry;
+    
     private Boolean allowOffers;
     
     @Column(columnDefinition = "jsonb")

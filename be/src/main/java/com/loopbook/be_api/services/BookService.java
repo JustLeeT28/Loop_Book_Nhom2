@@ -1,11 +1,22 @@
 package com.loopbook.be_api.services;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopbook.be_api.dtos.CreateListingRequest;
 import com.loopbook.be_api.dtos.ListingResponse;
 import com.loopbook.be_api.dtos.UpdateListingRequest;
 import com.loopbook.be_api.entities.Book;
+import com.loopbook.be_api.entities.Transaction;
 import com.loopbook.be_api.entities.User;
 import com.loopbook.be_api.repositories.BookRepository;
 import com.loopbook.be_api.repositories.UserRepository;
@@ -23,11 +34,15 @@ public class BookService {
 
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
+    private final WalletService walletService;
+    private final TransactionService transactionService;
     private final ObjectMapper objectMapper;
-
-    public BookService(BookRepository bookRepository, UserRepository userRepository, ObjectMapper objectMapper) {
+    
+    public BookService(BookRepository bookRepository, UserRepository userRepository, WalletService walletService, TransactionService transactionService, ObjectMapper objectMapper) {
         this.bookRepository = bookRepository;
         this.userRepository = userRepository;
+        this.walletService = walletService;
+        this.transactionService = transactionService;
         this.objectMapper = objectMapper;
     }
 
@@ -146,7 +161,8 @@ public class BookService {
     }
 
     public Page<ListingResponse> getListingsByStatus(String status, Pageable pageable) {
-        return bookRepository.findByStatusOrderByCreatedAtDesc(status, pageable)
+        // Ưu tiên bài boost lên trước
+        return bookRepository.findByStatusOrderByBoostAndCreatedAtDesc(status, LocalDateTime.now(), pageable)
                 .map(this::mapToResponse);
     }
 
@@ -167,46 +183,89 @@ public class BookService {
             Integer minPrice,
             Integer maxPrice,
             String sort) {
-
+        
+        LocalDateTime now = LocalDateTime.now();
+        
         // Không có filter → mặc định chỉ hiện active (ẩn sách đã bán)
-        if (status == null && category == null && school == null &&
-                minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusOrderByCreatedAtDesc("active", pageable)
+        if (status == null && category == null && school == null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusOrderByBoostAndCreatedAtDesc("active", now, pageable)
                     .map(this::mapToResponse);
         }
 
         // Nếu chỉ lọc theo status (trường hợp phổ biến nhất: active)
-        if (status != null && category == null && school == null &&
-                minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusOrderByCreatedAtDesc(status, pageable)
+        if (status != null && category == null && school == null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusOrderByBoostAndCreatedAtDesc(status, now, pageable)
                     .map(this::mapToResponse);
         }
 
         // Lọc theo status + category
-        if (status != null && category != null && school == null &&
-                minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusAndCategoryOrderByCreatedAtDesc(status, category, pageable)
+        if (status != null && category != null && school == null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusAndCategoryOrderByBoostAndCreatedAtDesc(status, category, now, pageable)
                     .map(this::mapToResponse);
         }
 
         // Lọc theo status + school
-        if (status != null && school != null && category == null &&
-                minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusAndSchoolOrderByCreatedAtDesc(status, school, pageable)
+        if (status != null && school != null && category == null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusAndSchoolOrderByBoostAndCreatedAtDesc(status, school, now, pageable)
                     .map(this::mapToResponse);
         }
 
         // Lọc theo status + category + school
-        if (status != null && category != null && school != null &&
-                minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusAndCategoryAndSchoolOrderByCreatedAtDesc(status, category, school, pageable)
+        if (status != null && category != null && school != null && 
+            minPrice == null && maxPrice == null) {
+            return bookRepository.findByStatusAndCategoryAndSchoolOrderByBoostAndCreatedAtDesc(status, category, school, now, pageable)
                     .map(this::mapToResponse);
         }
 
         // Fallback cho các trường hợp có price filter: dùng findAll (cần custom query phức tạp hơn)
         return bookRepository.findAll(pageable).map(this::mapToResponse);
     }
-
+    
+    @Transactional
+    public ListingResponse boostListing(String bookId, UUID sellerId, int amount, int days) {
+        Book book = bookRepository.findByIdAndSellerId(bookId, sellerId)
+                .orElseThrow(() -> new RuntimeException("Listing not found or unauthorized"));
+        
+        // Trừ tiền từ wallet
+        walletService.deduct(sellerId, amount);
+        
+        // Set boostExpiry
+        LocalDateTime expiry = LocalDateTime.now().plusDays(days);
+        book.setBoostExpiry(expiry);
+        
+        // Nếu mua gói urgent thì set urgent (gói 10k = 10000, gói combo 39k = 39000)
+        boolean isUrgentPackage = (amount == 10000 || amount == 39000);
+        if (isUrgentPackage) {
+            book.setUrgent(true);
+        }
+        
+        Book updated = bookRepository.save(book);
+        
+        // Ghi nhận giao dịch
+        Transaction tx = new Transaction();
+        tx.setId(UUID.randomUUID().toString());
+        tx.setBook(book.getTitle()); // book (nullable=false) - tên sách
+        tx.setPartner(sellerId.toString()); // partner (nullable=false) - user id
+        tx.setWhenTime(LocalDateTime.now().toString()); // whenTime (nullable=false)
+        tx.setBuyerId(sellerId);
+        tx.setSellerId(null);
+        tx.setBookId(bookId);
+        tx.setType("boost");
+        tx.setAmount(String.valueOf(amount));
+        tx.setStatus("completed");
+        tx.setIsCompleted(true);
+        tx.setCompletedAt(LocalDateTime.now());
+        tx.setPaymentMethod("wallet");
+        tx.setNotes("Mua gói dịch vụ đẩy tin cho sách: " + book.getTitle());
+        transactionService.create(tx);
+        
+        return mapToResponse(updated);
+    }
+    
     @Transactional
     public ListingResponse updateListingStatus(String bookId, String status) {
         Book book = bookRepository.findById(bookId)
@@ -272,6 +331,7 @@ public class BookService {
                     .school(book.getSchool())
                     .year(book.getYear())
                     .urgent(book.getUrgent())
+                    .boostExpiry(book.getBoostExpiry())
                     .allowOffers(book.getAllowOffers())
                     .images(images)
                     .deliveryMethods(deliveryMethods)
