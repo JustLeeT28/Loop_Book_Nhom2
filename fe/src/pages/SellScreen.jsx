@@ -29,10 +29,9 @@ export default function SellScreen() {
    const [allowOffers, setAllowOffers] = useState(true);
    const [description, setDescription] = useState("");
 
-   // Khối 4: Giao dịch & Urgent
+   // Khối 4: Giao dịch
    const [locationStr, setLocationStr] = useState("");
    const [selectedDeliveries, setSelectedDeliveries] = useState(["meet"]);
-   const [isUrgent, setIsUrgent] = useState(false);
 
    const [loading, setLoading] = useState(false);
    const [uploadStep, setUploadStep] = useState("");
@@ -173,7 +172,6 @@ export default function SellScreen() {
             edition: edition.trim() || null,
             school: school.trim() || null,
             year: numericYear,
-            urgent: isUrgent,
             allowOffers: allowOffers,
             deliveryMethods: selectedDeliveries,
             locationText: locationStr || null,
@@ -414,22 +412,6 @@ export default function SellScreen() {
                      </button>
                   ))}
                </div>
-            </div>
-
-            <div className="border-t border-slate-100 pt-6">
-               <label className="flex items-center justify-between cursor-pointer group">
-                  <div>
-                     <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-lg">🔥 Cần bán gấp</span>
-                        {isUrgent && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-bold">Urgent</span>}
-                     </div>
-                     <p className="text-sm text-slate-500 mt-1">Tin đăng sẽ được ưu tiên gắn nhãn nổi bật để thu hút người mua nhanh nhất.</p>
-                  </div>
-                  <div className="relative inline-flex items-center cursor-pointer">
-                     <input type="checkbox" checked={isUrgent} onChange={() => setIsUrgent(!isUrgent)} className="sr-only peer" />
-                     <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-700"></div>
-                  </div>
-               </label>
             </div>
          </div>
 

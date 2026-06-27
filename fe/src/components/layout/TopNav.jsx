@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import BrandLogo from "../common/BrandLogo";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function TopNav() {
+  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { user, userData, openLoginModal, openRegisterModal, signOut } = useAuth();
@@ -32,6 +33,12 @@ export default function TopNav() {
                 placeholder="Tìm kiếm tài liệu, sách..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && searchQuery.trim()) {
+                    navigate(`/kham-pha?q=${encodeURIComponent(searchQuery.trim())}`);
+                    setSearchQuery("");
+                  }
+                }}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-transparent rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-teal-400 transition-all text-sm"
               />
             </div>

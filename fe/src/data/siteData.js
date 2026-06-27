@@ -339,18 +339,21 @@ export const premiumPlans = [
     id: "urgent",
     name: "Nhãn Bán gấp",
     price: 10000,
-    summary: "Gắn nhãn nổi bật trên danh sách tìm kiếm trong 7 ngày.",
+    days: 7,
+    summary: "Gắn nhãn nổi bật trên danh sách tìm kiếm.",
   },
   {
     id: "boost",
     name: "Đẩy tin trang đầu",
     price: 25000,
+    days: 7,
     summary: "Ưu tiên hiển thị ở cụm đề xuất và dashboard người mua.",
   },
   {
     id: "combo",
-    name: "Combo ưu tiên 14 ngày",
+    name: "Combo ưu tiên",
     price: 39000,
+    days: 14,
     summary: "Bao gồm nhãn nổi bật, đẩy tin và thống kê lượt xem.",
   },
 ];

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { listingApi } from "../services/listingApi";
 import { configApi } from "../services/configApi";
 import BookCard from "../components/common/BookCard";
@@ -12,11 +13,15 @@ const PRICE_PRESETS = [
 ];
 
 export default function ExploreScreen() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get("q") || "";
+
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedSchool, setSelectedSchool] = useState("all");
   const [selectedPrice, setSelectedPrice] = useState(0);
   const [sortBy, setSortBy] = useState("relevant");
   const [schoolQuery, setSchoolQuery] = useState("");
+  const [keyword, setKeyword] = useState(urlQuery);
 
   // Data từ BE
   const [categories, setCategories] = useState([]);
@@ -34,22 +39,28 @@ export default function ExploreScreen() {
         ]);
         if (cancelled) return;
 
-        // Xử lý categories
-        const catList = catData.map((c) => ({
-          id: c.id,
-          name: c.name,
-          icon: c.icon || "📚",
-          slug: c.slug,
-        }));
+        // Xử lý categories (đảm bảo catData là array)
+        const catList = Array.isArray(catData)
+          ? catData.map((c) => ({
+              id: c.id,
+              name: c.name,
+              icon: c.icon || "📚",
+              slug: c.slug,
+            }))
+          : [];
         setCategories(catList);
 
-        // Extract danh sách trường từ books
-        const activeBooks = (bookData.content || bookData).filter(
-          (b) => b.status === "active"
-        );
+        // Extract danh sách trường từ books (đảm bảo bookData.content hoặc bookData là array)
+        const bookList = Array.isArray(bookData)
+          ? bookData
+          : Array.isArray(bookData?.content)
+          ? bookData.content
+          : [];
+        const activeBooks = bookList.filter((b) => b.status === "active");
         setBooks(activeBooks);
-        const schools = [...new Set(activeBooks.map((b) => b.school))].sort(
-          (a, b) => a.localeCompare(b, "vi")
+        const schoolSet = new Set(activeBooks.map((b) => b.school).filter(Boolean));
+        const schools = [...schoolSet].sort((a, b) =>
+          (a || "").localeCompare(b || "", "vi")
         );
         setAllSchools(schools);
       } catch (err) {
@@ -62,8 +73,24 @@ export default function ExploreScreen() {
     return () => { cancelled = true; };
   }, []);
 
+  // Đồng bộ keyword từ URL khi URL thay đổi (người dùng search từ TopNav)
+  useEffect(() => {
+    setKeyword(urlQuery);
+  }, [urlQuery]);
+
   const filteredBooks = useMemo(() => {
     let result = [...books];
+
+    // Lọc từ khóa (tìm trong title, author, description)
+    if (keyword.trim()) {
+      const kw = keyword.trim().toLowerCase();
+      result = result.filter(
+        (b) =>
+          (b.title && b.title.toLowerCase().includes(kw)) ||
+          (b.author && b.author.toLowerCase().includes(kw)) ||
+          (b.description && b.description.toLowerCase().includes(kw))
+      );
+    }
 
     // Lọc danh mục
     if (selectedCategory !== "all") {
@@ -79,18 +106,30 @@ export default function ExploreScreen() {
     const { min, max } = PRICE_PRESETS[selectedPrice];
     result = result.filter((b) => b.price >= min && b.price <= max);
 
-    // Sắp xếp
-    if (sortBy === "price_asc") result.sort((a, b) => a.price - b.price);
-    else if (sortBy === "price_desc") result.sort((a, b) => b.price - a.price);
-    else if (sortBy === "newest") result.sort((a, b) => (b.year || 0) - (a.year || 0));
+    // Sắp xếp: boosted-first
+    const now = new Date().toISOString();
+    result.sort((a, b) => {
+      // Listing đang được boost (boostExpiry > now) luôn lên đầu
+      const aBoosted = a.boostExpiry && a.boostExpiry > now ? 1 : 0;
+      const bBoosted = b.boostExpiry && b.boostExpiry > now ? 1 : 0;
+      if (aBoosted !== bBoosted) return bBoosted - aBoosted;
+      
+      // Sau đó mới áp dụng sort theo lựa chọn của user
+      if (sortBy === "price_asc") return a.price - b.price;
+      if (sortBy === "price_desc") return b.price - a.price;
+      if (sortBy === "newest") return (b.year || 0) - (a.year || 0);
+      return 0;
+    });
 
     return result;
-  }, [books, selectedCategory, selectedSchool, selectedPrice, sortBy]);
+  }, [books, keyword, selectedCategory, selectedSchool, selectedPrice, sortBy]);
 
   const hasFilter =
-    selectedCategory !== "all" || selectedSchool !== "all" || selectedPrice !== 0;
+    keyword !== "" || selectedCategory !== "all" || selectedSchool !== "all" || selectedPrice !== 0;
 
   const resetAll = () => {
+    setKeyword("");
+    setSearchParams({});
     setSelectedCategory("all");
     setSelectedSchool("all");
     setSelectedPrice(0);
@@ -98,7 +137,7 @@ export default function ExploreScreen() {
   };
 
   const filteredSchools = allSchools.filter((s) =>
-    s.toLowerCase().includes(schoolQuery.toLowerCase())
+    (s || "").toLowerCase().includes(schoolQuery.toLowerCase())
   );
 
   // Map BE book → format BookCard mong đợi

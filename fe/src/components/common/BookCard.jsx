@@ -20,9 +20,21 @@ export default function BookCard({ book }) {
           <span className="text-xs">Chưa có ảnh</span>
         </div>
         )}
+        {/* Badge đẩy tin */}
+        {(() => {
+          const now = new Date().toISOString();
+          const isBoosted = book.boostExpiry && book.boostExpiry > now;
+          if (!isBoosted) return null;
+          return (
+            <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-sm">
+              <span>🔥</span>
+              <span>Đẩy tin</span>
+            </div>
+          );
+        })()}
         {/* Badge bán gấp */}
         {book.urgent && (
-          <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+          <div className="absolute top-10 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
             Bán gấp
           </div>
         )}

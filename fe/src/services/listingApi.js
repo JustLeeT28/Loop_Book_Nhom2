@@ -150,6 +150,25 @@ export const listingApi = {
     return await response.json();
   },
 
+  // Boost a listing (premium service)
+  async boostListing(bookId, amount, days, authToken) {
+    const response = await fetch(`${API_URL}/listings/${bookId}/boost`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ amount, days }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to boost listing');
+    }
+
+    return await response.json();
+  },
+
   // Reject listing (admin)
   async rejectListing(bookId, reason, authToken) {
     const response = await fetch(
