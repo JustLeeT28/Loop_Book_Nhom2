@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, Navigate, useParams, useNavigate } from "react-router-dom";
-import { books, categories } from "../data/siteData";
+import { listingApi } from "../services/listingApi";
+import { configApi } from "../services/configApi";
+import { favoriteApi } from "../services/favoriteApi";
+import { useAuth } from "../contexts/AuthContext";
 import { formatPrice } from "../utils/formatters";
 import BookCard from "../components/common/BookCard";
 
@@ -70,37 +73,127 @@ function ImageCarousel({ images, title }) {
 export default function BookDetailScreen() {
   const { bookId } = useParams();
   const navigate = useNavigate();
+  const { userData, session, token } = useAuth();
   const [offerValue, setOfferValue] = useState("");
   const [showOfferBox, setShowOfferBox] = useState(false);
 
+  // Data từ BE
+  const [book, setBook] = useState(null);
+  const [related, setRelated] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [favorited, setFavorited] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchData() {
+      try {
+        // Lấy chi tiết sách
+        const bookData = await listingApi.getListingById(bookId);
+        if (cancelled) return;
+        setBook(bookData);
+
+        // Lấy sách liên quan cùng category
+        const relatedData = await listingApi.getListings({
+          category: bookData.category,
+          status: "active",
+          size: 20,
+        });
+        if (!cancelled) {
+          const relatedList = (relatedData.content || relatedData || [])
+            .filter((b) => b.id !== bookId && b.status === "active")
+            .slice(0, 4);
+          setRelated(relatedList);
+        }
+        // Kiểm tra yêu thích nếu đã đăng nhập
+        if (session?.access_token) {
+          try {
+            const favResult = await favoriteApi.checkFavorited(bookId, session.access_token);
+            if (!cancelled) setFavorited(favResult.favorited);
+          } catch (e) {
+            // ignore
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load book detail:", err);
+        if (!cancelled) setNotFound(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    fetchData();
+    return () => { cancelled = true; };
+  }, [bookId, session]);
+
+  const handleToggleFavorite = async () => {
+    if (!session?.access_token) {
+      navigate("/login");
+      return;
+    }
+    setFavoriteLoading(true);
+    try {
+      const result = await favoriteApi.toggleFavorite(bookId, session.access_token);
+      setFavorited(result.favorited);
+    } catch (err) {
+      console.error("Failed to toggle favorite:", err);
+    } finally {
+      setFavoriteLoading(false);
+    }
+  };
+
   const handleSendOffer = () => {
     if (!offerValue) return;
-    navigate("/tin-nhan", { 
-      state: { 
+    navigate("/tin-nhan", {
+      state: {
         initialOffer: {
           bookId: book?.id,
           bookTitle: book?.title,
           offerPrice: offerValue
         }
-      } 
+      }
     });
   };
 
-  const book = books.find((item) => item.id === bookId);
-  if (!book) return <Navigate replace to="/kham-pha" />;
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-teal-200 border-t-teal-700 rounded-full animate-spin" />
+          <p className="text-sm text-slate-400 font-medium">Đang tải...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // Giả lập nhiều ảnh từ 1 ảnh thực
-  const bookImages = [book.image, book.image, book.image];
+  if (notFound || !book) return <Navigate replace to="/kham-pha" />;
 
-  const related = books.filter((b) => b.id !== book.id && b.category === book.category).slice(0, 4);
+  // Lấy ảnh: nếu images array rỗng thì dùng placeholder
+  const bookImages = book.images?.length > 0 ? book.images : [
+    "https://placehold.co/600x800?text=No+Image",
+  ];
+
+  // Tính % giảm giá
+  const discountPercent = book.originalPrice && book.originalPrice > 0
+    ? Math.round((1 - book.price / book.originalPrice) * 100)
+    : 0;
 
   const conditionColor = {
-    "Mới 99%": "bg-green-100 text-green-700",
-    "Mới 95%": "bg-green-100 text-green-700",
-    "Mới 90%": "bg-blue-100 text-blue-700",
-    "Mới 85%": "bg-blue-100 text-blue-700",
-    "Mới 80%": "bg-yellow-100 text-yellow-700",
+    "brand_new": "bg-green-100 text-green-700",
+    "like_new": "bg-green-100 text-green-700",
+    "very_good": "bg-blue-100 text-blue-700",
+    "good": "bg-blue-100 text-blue-700",
+    "acceptable": "bg-yellow-100 text-yellow-700",
   }[book.condition] || "bg-slate-100 text-slate-600";
+
+  const conditionLabels = {
+    "brand_new": "Mới 100%",
+    "like_new": "Mới 99%",
+    "very_good": "Mới 95%",
+    "good": "Mới 90%",
+    "acceptable": "Mới 80%",
+  };
 
   return (
     <div className="max-w-6xl mx-auto py-4 md:py-6">
@@ -128,8 +221,16 @@ export default function BookDetailScreen() {
               <h1 className="text-xl font-bold text-slate-900 leading-snug mb-1">{book.title}</h1>
               <p className="text-sm text-slate-500">{book.edition}</p>
             </div>
-            <button className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 hover:border-teal-500 hover:text-teal-600 text-slate-400 transition-all">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button
+              onClick={handleToggleFavorite}
+              disabled={favoriteLoading}
+              className={`flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full border transition-all ${
+                favorited
+                  ? "bg-red-50 border-red-300 text-red-500 hover:bg-red-100"
+                  : "border-slate-200 hover:border-teal-500 hover:text-teal-600 text-slate-400"
+              }`}
+            >
+              <svg className="w-5 h-5" fill={favorited ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
             </button>
@@ -139,10 +240,14 @@ export default function BookDetailScreen() {
           <div className="mb-4">
             <div className="flex items-baseline gap-3">
               <span className="text-3xl font-extrabold text-slate-900">{formatPrice(book.price)}</span>
-              <span className="text-sm text-slate-400 line-through">{formatPrice(book.originalPrice)}</span>
-              <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
-                -{Math.round((1 - book.price / book.originalPrice) * 100)}%
-              </span>
+              {book.originalPrice && book.originalPrice > 0 && (
+                <>
+                  <span className="text-sm text-slate-400 line-through">{formatPrice(book.originalPrice)}</span>
+                  <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                    -{discountPercent}%
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -160,43 +265,54 @@ export default function BookDetailScreen() {
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <div>
                 <span className="text-slate-400 block mb-0.5">Tác giả</span>
-                <span className="font-semibold text-slate-800">{book.author}</span>
+                <span className="font-semibold text-slate-800">{book.author || "Đang cập nhật"}</span>
               </div>
               <div>
                 <span className="text-slate-400 block mb-0.5">Nhà xuất bản</span>
-                <span className="font-semibold text-slate-800">{book.publisher}</span>
+                <span className="font-semibold text-slate-800">{book.publisher || "Đang cập nhật"}</span>
               </div>
               <div>
                 <span className="text-slate-400 block mb-0.5">Năm xuất bản</span>
-                <span className="font-semibold text-slate-800">{book.year}</span>
+                <span className="font-semibold text-slate-800">{book.year || "Đang cập nhật"}</span>
               </div>
               <div>
                 <span className="text-slate-400 block mb-0.5">Tình trạng</span>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${conditionColor}`}>{book.condition}</span>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${conditionColor}`}>
+                  {conditionLabels[book.condition] || book.condition}
+                </span>
               </div>
               <div className="col-span-2">
                 <span className="text-slate-400 block mb-0.5">Trường sử dụng</span>
-                <span className="font-semibold text-slate-800">{book.school}</span>
+                <span className="font-semibold text-slate-800">{book.school || "Đang cập nhật"}</span>
               </div>
             </div>
           </div>
 
           {/* Mô tả */}
-          <div className="mb-5">
-            <p className="text-sm text-slate-600 leading-relaxed">{book.description}</p>
-          </div>
+          {book.description && (
+            <div className="mb-5">
+              <p className="text-sm text-slate-600 leading-relaxed">{book.description}</p>
+            </div>
+          )}
 
           {/* Nút CTA chính */}
           <div className="flex flex-col gap-2.5 mb-5">
-            <button className="w-full py-3.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-lg transition-colors text-sm">
-              Mua ngay
-            </button>
-            <button
-              onClick={() => setShowOfferBox(!showOfferBox)}
-              className="w-full py-3 border border-teal-700 text-teal-700 hover:bg-teal-50 font-bold rounded-lg transition-colors text-sm"
-            >
-              Trả giá
-            </button>
+            {(!userData || userData.id !== book.sellerId) && (
+              <button
+                onClick={() => navigate(`/checkout/${bookId}`)}
+                className="w-full py-3.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-lg transition-colors text-sm"
+              >
+                Mua ngay
+              </button>
+            )}
+            {(!userData || userData.id !== book.sellerId) && (
+              <button
+                onClick={() => setShowOfferBox(!showOfferBox)}
+                className="w-full py-3 border border-teal-700 text-teal-700 hover:bg-teal-50 font-bold rounded-lg transition-colors text-sm"
+              >
+                Trả giá
+              </button>
+            )}
             <Link
               to="/tin-nhan"
               className="w-full py-3 border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold rounded-lg transition-colors text-sm text-center"
@@ -225,7 +341,7 @@ export default function BookDetailScreen() {
                 </button>
               </div>
               <p className="text-xs text-slate-400 mt-2">
-                Tối đa giảm {Math.round((1 - book.price / book.originalPrice) * 100)}% so với giá niêm yết
+                Tối đa giảm {discountPercent}% so với giá niêm yết
               </p>
             </div>
           )}
@@ -247,28 +363,12 @@ export default function BookDetailScreen() {
           {/* Hồ sơ người bán — tách biệt rõ ràng khỏi thông tin tác giả */}
           <div className="border border-slate-200 rounded-xl p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors cursor-pointer">
             <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold text-lg flex-shrink-0">
-              {book.seller?.name?.charAt(0) || "N"}
+              {book.sellerName?.charAt(0) || "N"}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <p className="font-bold text-slate-900 text-sm">{book.seller?.name}</p>
-                {book.verified && (
-                  <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mb-1">{book.seller?.faculty}</p>
-              <div className="flex items-center gap-1 text-xs">
-                <span className="text-yellow-500">{"★".repeat(Math.round(book.seller?.rating || 4))}</span>
-                <span className="text-slate-400">({book.seller?.rating}/5)</span>
-                <span className="text-slate-300 mx-1">·</span>
-                <span className="text-slate-400">Phản hồi trong {book.seller?.responseTime}</span>
-              </div>
+              <p className="font-bold text-slate-900 text-sm">{book.sellerName || "Người bán"}</p>
+              <p className="text-xs text-slate-400 mt-0.5">Xem trang người bán →</p>
             </div>
-            <svg className="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-            </svg>
           </div>
         </div>
       </div>
@@ -284,7 +384,12 @@ export default function BookDetailScreen() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8">
             {related.map((b) => (
-              <BookCard key={b.id} book={b} />
+              <BookCard key={b.id} book={{
+                ...b,
+                image: b.images?.[0] || "https://placehold.co/300x400?text=No+Image",
+                verified: false,
+                seller: { name: b.sellerName || "Người bán" },
+              }} />
             ))}
           </div>
         </section>
