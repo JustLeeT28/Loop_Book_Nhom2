@@ -60,6 +60,10 @@ public class SecurityConfig {
                 // Public profile viewing (GET /api/users/{userId})
                 .requestMatchers(HttpMethod.GET, "/api/users/{userId}").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/users/*").permitAll()
+                // Public premium plans (GET /api/premium-plans)
+                .requestMatchers(HttpMethod.GET, "/api/premium-plans/**").permitAll()
+                // Admin endpoints require ADMIN role
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 // All other endpoints require authentication
                 .anyRequest().authenticated()
             )
