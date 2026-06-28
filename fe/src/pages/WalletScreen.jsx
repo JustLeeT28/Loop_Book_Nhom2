@@ -91,7 +91,7 @@ export default function WalletScreen() {
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <h2 className="font-bold text-slate-900">Lịch sử giao dịch</h2>
-          <Link to="/my-transactions" className="text-sm text-teal-700 font-semibold hover:underline">
+          <Link to="/giao-dich" className="text-sm text-teal-700 font-semibold hover:underline">
             Xem tất cả
           </Link>
         </div>
@@ -104,7 +104,7 @@ export default function WalletScreen() {
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {transactions.slice(0, 10).map((txn) => {
+              {transactions.slice(0, 10).map((txn) => {
               const isBuyer = String(txn.buyerId || txn.buyer_id) === String(userData.id);
               const bookName = typeof txn.book === "string" ? txn.book : txn.book?.title || "—";
               const rawDate = txn.createdAt || txn.created_at;
@@ -115,28 +115,103 @@ export default function WalletScreen() {
                     year: "numeric",
                   })
                 : "—";
+
+              // Xác định loại giao dịch từ trường type
+              const txnType = txn.type || "";
+              let label = "";
+              let icon = null;
+              let iconBg = "";
+              let iconColor = "";
+
+              if (txnType === "topup") {
+                label = "Nạp tiền";
+                icon = (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v14M5 12l7-7 7 7" /></svg>
+                );
+                iconBg = "bg-blue-100";
+                iconColor = "text-blue-600";
+              } else if (txnType === "boost") {
+                // Parse plan name from notes: "Mua gói {planName} cho sách: {bookTitle}"
+                const planName = txn.notes?.match(/Mua gói (.+?) cho sách/)?.[1] || "";
+                label = planName ? `Đẩy tin: ${planName}` : "Dịch vụ đẩy tin";
+                icon = (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                );
+                iconBg = "bg-violet-100";
+                iconColor = "text-violet-600";
+              } else if (txnType === "package") {
+                // For package type, book field stores the package name directly
+                label = bookName ? `Mua gói: ${bookName}` : "Mua gói dịch vụ";
+                icon = (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                );
+                iconBg = "bg-amber-100";
+                iconColor = "text-amber-600";
+              } else if (txnType === "buy") {
+                if (isBuyer) {
+                  label = bookName ? `Mua: ${bookName}` : "Mua sách";
+                  icon = (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
+                  );
+                  iconBg = "bg-red-100";
+                  iconColor = "text-red-500";
+                } else {
+                  label = bookName ? `Bán: ${bookName}` : "Bán sách";
+                  icon = (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  );
+                  iconBg = "bg-green-100";
+                  iconColor = "text-green-600";
+                }
+              } else {
+                // Fallback cho các type không xác định
+                if (isBuyer) {
+                  label = "Mua";
+                  icon = (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
+                  );
+                  iconBg = "bg-red-100";
+                  iconColor = "text-red-500";
+                } else {
+                  label = "Bán";
+                  icon = (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  );
+                  iconBg = "bg-green-100";
+                  iconColor = "text-green-600";
+                }
+              }
+
+              // Xác định màu hiển thị số tiền dựa vào type
+              let amountColor = "text-red-500";
+              let amountPrefix = "-";
+              if (txnType === "topup") {
+                amountColor = "text-blue-600";
+                amountPrefix = "+";
+              } else if (txnType === "boost" || txnType === "package") {
+                amountColor = "text-red-500";
+                amountPrefix = "-";
+              } else if (!isBuyer) {
+                amountColor = "text-green-600";
+                amountPrefix = "+";
+              } else if (isBuyer) {
+                amountColor = "text-red-500";
+                amountPrefix = "-";
+              }
+
               return (
                 <div key={txn.id} className="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    isBuyer ? "bg-red-100" : "bg-green-100"
-                  }`}>
-                    {isBuyer ? (
-                      <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
-                    ) : (
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    )}
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+                    {icon}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-slate-900 text-sm">
-                      <span className={`text-xs font-semibold mr-1 ${isBuyer ? "text-red-500" : "text-green-600"}`}>{isBuyer ? "Mua" : "Bán"}</span>
-                      {bookName}
+                      {label}
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">{formattedDate}</p>
                   </div>
-                  <span className={`font-bold text-sm ${
-                    isBuyer ? "text-red-500" : "text-green-600"
-                  }`}>
-                    {isBuyer ? "-" : "+"}{formatPrice(txn.amount)}
+                  <span className={`font-bold text-sm ${amountColor}`}>
+                    {amountPrefix}{formatPrice(txn.amount)}
                   </span>
                 </div>
               );

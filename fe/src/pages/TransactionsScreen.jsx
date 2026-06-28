@@ -55,6 +55,18 @@ function TransactionCard({ item, isCompleted }) {
 }
 
 function ServiceCard({ item }) {
+  // Boost notes: "Mua gói {planName} cho sách: {bookTitle}"
+  const boostMatch = item.notes?.match(/Mua gói (.+?) cho sách: (.+)/);
+  // Package notes: "Mua gói: {planName}"
+  const packageMatch = item.notes?.match(/Mua gói: (.+)/);
+
+  const planName = boostMatch
+    ? boostMatch[1].trim()
+    : packageMatch
+      ? packageMatch[1].trim()
+      : item.book || null;
+  const bookName = boostMatch ? boostMatch[2].trim() : null;
+
   return (
     <div className="flex items-start gap-4 px-5 py-4 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
       <div className="w-10 h-10 rounded-full bg-violet-100 text-violet-700 font-bold flex items-center justify-center text-sm flex-shrink-0">
@@ -62,8 +74,12 @@ function ServiceCard({ item }) {
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-slate-900 text-sm truncate">{item.book}</p>
-        <p className="text-xs text-slate-500 mt-0.5">Gói <span className="font-medium text-slate-700">{item.partner}</span></p>
+        <p className="font-semibold text-slate-900 text-sm truncate">{planName}</p>
+        {bookName && (
+          <p className="text-xs text-violet-500 leading-tight mt-0.5">
+            Đã áp dụng cho: {bookName}
+          </p>
+        )}
         <div className="flex items-center gap-2 mt-2">
           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Đã kích hoạt</span>
           <span className="text-xs text-slate-400">{item.when}</span>
@@ -128,6 +144,8 @@ export default function TransactionsScreen() {
         const mapped = (data || []).map((t) => {
           const isComp = t.isCompleted || t.status === "completed";
           const isBoost = t.type === "boost";
+          const isPackage = t.type === "package";
+          const isService = isBoost || isPackage;
           const isBuyer = String(t.buyerId) === String(userData?.id);
           return {
             id: t.id,
@@ -138,7 +156,9 @@ export default function TransactionsScreen() {
             when: formatWhen(t.whenTime || t.createdAt),
             isCompleted: isComp,
             isBoost,
-            role: isBoost ? "service" : isBuyer ? "buy" : "sell",
+            isPackage,
+            notes: t.notes || "",
+            role: isService ? "service" : isBuyer ? "buy" : "sell",
           };
         });
         setAllTransactions(mapped);
@@ -297,7 +317,7 @@ export default function TransactionsScreen() {
             </div>
           ) : (
             filtered.map((item) =>
-              item.isBoost ? (
+              item.isBoost || item.isPackage ? (
                 <ServiceCard key={item.id} item={item} />
               ) : (
                 <TransactionCard key={item.id} item={item} isCompleted={item.isCompleted} />

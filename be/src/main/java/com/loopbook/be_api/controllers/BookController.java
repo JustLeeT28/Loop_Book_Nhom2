@@ -167,13 +167,16 @@ public class BookController {
     @PostMapping("/{bookId}/boost")
     public ResponseEntity<?> boostListing(
             @PathVariable String bookId,
-            @RequestBody Map<String, Integer> body,
+            @RequestBody Map<String, String> body,
             @RequestHeader("Authorization") String authHeader) {
         try {
             UUID userId = jwtUtils.extractUserIdFromToken(authHeader);
-            int amount = body.getOrDefault("amount", 10000);
-            int days = body.getOrDefault("days", 7);
-            ListingResponse response = bookService.boostListing(bookId, userId, amount, days);
+            String planId = body.get("planId");
+            if (planId == null || planId.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "error", "planId là bắt buộc"));
+            }
+            ListingResponse response = bookService.boostListing(bookId, userId, planId);
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "data", response,

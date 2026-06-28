@@ -16,18 +16,12 @@ import com.loopbook.be_api.dtos.CreateListingRequest;
 import com.loopbook.be_api.dtos.ListingResponse;
 import com.loopbook.be_api.dtos.UpdateListingRequest;
 import com.loopbook.be_api.entities.Book;
+import com.loopbook.be_api.entities.PremiumPlan;
 import com.loopbook.be_api.entities.Transaction;
 import com.loopbook.be_api.entities.User;
 import com.loopbook.be_api.repositories.BookRepository;
+import com.loopbook.be_api.repositories.TransactionRepository;
 import com.loopbook.be_api.repositories.UserRepository;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
 
 @Service
 public class BookService {
@@ -35,15 +29,17 @@ public class BookService {
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
     private final WalletService walletService;
-    private final TransactionService transactionService;
+    private final TransactionRepository transactionRepository;
     private final ObjectMapper objectMapper;
+    private final PremiumPlanService premiumPlanService;
     
-    public BookService(BookRepository bookRepository, UserRepository userRepository, WalletService walletService, TransactionService transactionService, ObjectMapper objectMapper) {
+    public BookService(BookRepository bookRepository, UserRepository userRepository, WalletService walletService, TransactionRepository transactionRepository, ObjectMapper objectMapper, PremiumPlanService premiumPlanService) {
         this.bookRepository = bookRepository;
         this.userRepository = userRepository;
         this.walletService = walletService;
-        this.transactionService = transactionService;
+        this.transactionRepository = transactionRepository;
         this.objectMapper = objectMapper;
+        this.premiumPlanService = premiumPlanService;
     }
 
     @Transactional
@@ -70,7 +66,7 @@ public class BookService {
         if ("draft".equals(request.getStatus())) {
             book.setStatus("draft");
         } else {
-            book.setStatus("pending");
+            book.setStatus("pending"); // Default to pending for admin review
         }
         book.setViewCount(0);
         book.setFavoriteCount(0);
@@ -226,20 +222,37 @@ public class BookService {
     }
     
     @Transactional
-    public ListingResponse boostListing(String bookId, UUID sellerId, int amount, int days) {
+    public ListingResponse boostListing(String bookId, UUID sellerId, String planId) {
         Book book = bookRepository.findByIdAndSellerId(bookId, sellerId)
                 .orElseThrow(() -> new RuntimeException("Listing not found or unauthorized"));
         
+        // Kiểm tra sách đã có premium đang hoạt động chưa
+        if (book.getBoostExpiry() != null && book.getBoostExpiry().isAfter(LocalDateTime.now())) {
+            throw new RuntimeException("Sách này đã có gói Premium đang hoạt động đến " + book.getBoostExpiry().toString() + ". Vui lòng đợi hết hạn rồi mua lại.");
+        }
+        
+        // Validate gói dịch vụ từ DB
+        PremiumPlan plan = premiumPlanService.getById(planId);
+        
         // Trừ tiền từ wallet
-        walletService.deduct(sellerId, amount);
+        walletService.deduct(sellerId, plan.getPrice().intValue());
         
-        // Set boostExpiry
-        LocalDateTime expiry = LocalDateTime.now().plusDays(days);
-        book.setBoostExpiry(expiry);
+        // Reset urgent and boostExpiry before applying new plan
+        book.setUrgent(false); // Default to false
+        book.setBoostExpiry(null); // Default to null
         
-        // Nếu mua gói urgent thì set urgent (gói 10k = 10000, gói combo 39k = 39000)
-        boolean isUrgentPackage = (amount == 10000 || amount == 39000);
-        if (isUrgentPackage) {
+        book.setPremiumPlanId(planId); // Set the premium plan ID on the book
+
+        // Calculate expiry for boost plans
+        LocalDateTime expiry = LocalDateTime.now().plusDays(plan.getDays());
+
+        // Apply boost if plan has days (boost or combo)
+        if (plan.getDays() > 0) {
+            book.setBoostExpiry(expiry);
+        }
+
+        // Set urgent based on planId
+        if ("urgent".equals(planId) || "boost".equals(planId) || "combo".equals(planId)) {
             book.setUrgent(true);
         }
         
@@ -255,13 +268,13 @@ public class BookService {
         tx.setSellerId(null);
         tx.setBookId(bookId);
         tx.setType("boost");
-        tx.setAmount(String.valueOf(amount));
+        tx.setAmount(String.valueOf(plan.getPrice().intValue()));
         tx.setStatus("completed");
         tx.setIsCompleted(true);
         tx.setCompletedAt(LocalDateTime.now());
         tx.setPaymentMethod("wallet");
-        tx.setNotes("Mua gói dịch vụ đẩy tin cho sách: " + book.getTitle());
-        transactionService.create(tx);
+        tx.setNotes("Mua gói " + plan.getName() + " cho sách: " + book.getTitle());
+        transactionRepository.save(tx);
         
         return mapToResponse(updated);
     }
@@ -330,7 +343,8 @@ public class BookService {
                     .edition(book.getEdition())
                     .school(book.getSchool())
                     .year(book.getYear())
-                    .urgent(book.getUrgent())
+                    // Urgent status is true only if the book was marked urgent AND its boostExpiry is still active
+                    .urgent(book.getUrgent() != null && book.getUrgent() && book.getBoostExpiry() != null && book.getBoostExpiry().isAfter(LocalDateTime.now()))
                     .boostExpiry(book.getBoostExpiry())
                     .allowOffers(book.getAllowOffers())
                     .images(images)
@@ -359,5 +373,13 @@ public class BookService {
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
+    }
+
+    @Transactional
+    public void applyPremiumPlan(String bookId, String premiumPlanId) {
+        Book book = bookRepository.findById(bookId)
+                .orElseThrow(() -> new RuntimeException("Book not found"));
+        book.setPremiumPlanId(premiumPlanId);
+        bookRepository.save(book);
     }
 }

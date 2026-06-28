@@ -93,4 +93,6 @@ public class Book {
     private Integer favoriteCount;
     
     private String rejectReason;
+
+    private String premiumPlanId;
 }

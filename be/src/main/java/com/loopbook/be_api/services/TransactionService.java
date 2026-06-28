@@ -1,15 +1,16 @@
 package com.loopbook.be_api.services;
 
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.loopbook.be_api.entities.Book;
 import com.loopbook.be_api.entities.Transaction;
 import com.loopbook.be_api.repositories.BookRepository;
 import com.loopbook.be_api.repositories.TransactionRepository;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
 
 @Service
 public class TransactionService {
@@ -17,13 +18,13 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final WalletService walletService;
     private final BookRepository bookRepository;
-    private final TransactionService transactionService;
+    private final PremiumPlanService premiumPlanService;
 
-    public TransactionService(TransactionRepository transactionRepository, WalletService walletService, BookRepository bookRepository, TransactionService transactionService) {
+    public TransactionService(TransactionRepository transactionRepository, WalletService walletService, BookRepository bookRepository, PremiumPlanService premiumPlanService) {
         this.transactionRepository = transactionRepository;
         this.walletService = walletService;
         this.bookRepository = bookRepository;
-        this.transactionService = transactionService;
+        this.premiumPlanService = premiumPlanService;
     }
 
     @Transactional
@@ -292,9 +293,10 @@ public class TransactionService {
     public Transaction purchasePackage(
             UUID userId,
             String packageName,
+            String planId,
             Integer amount) {
 
-        // trừ tiền ví
+        // Deduct money from user's wallet
         walletService.deduct(
                 userId,
                 amount);
@@ -309,8 +311,7 @@ public class TransactionService {
 
         transaction.setType("package");
 
-        transaction.setBook(
-                packageName);
+        transaction.setBook(packageName);
 
         transaction.setPartner(
                 "LoopBook");
@@ -332,7 +333,7 @@ public class TransactionService {
                         .toString());
 
         transaction.setNotes(
-                "Mua gói dịch vụ");
+                "Mua gói: " + packageName);
 
         return transactionRepository.save(
                 transaction);

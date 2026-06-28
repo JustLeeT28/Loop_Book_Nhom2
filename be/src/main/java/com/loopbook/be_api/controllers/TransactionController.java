@@ -1,5 +1,22 @@
 package com.loopbook.be_api.controllers;
 
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.loopbook.be_api.entities.Book;
 import com.loopbook.be_api.entities.Transaction;
 import com.loopbook.be_api.entities.User;
@@ -8,14 +25,6 @@ import com.loopbook.be_api.security.JwtUtils;
 import com.loopbook.be_api.services.BookService;
 import com.loopbook.be_api.services.TransactionService;
 import com.loopbook.be_api.services.WalletService;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/transactions")
@@ -264,6 +273,10 @@ public class TransactionController {
                     (String) body.get(
                             "packageName");
 
+            String planId =
+                    (String) body.get(
+                            "planId");
+
             Integer amount =
                     ((Number) body.get(
                             "amount"))
@@ -274,6 +287,7 @@ public class TransactionController {
                             .purchasePackage(
                                     userId,
                                     packageName,
+                                    planId,
                                     amount));
 
         } catch (Exception e) {
