@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { premiumPlans } from "../data/siteData";
 import { formatPrice } from "../utils/formatters";
 import { listingApi } from "../services/listingApi";
 import { useAuth } from "../contexts/AuthContext";
@@ -9,13 +8,16 @@ import Page from "../components/layout/Page";
 export default function PremiumScreen() {
   const { token, user, openLoginModal, showToast } = useAuth();
   const navigate = useNavigate();
-  const [selectedPlan, setSelectedPlan] = useState(premiumPlans[0].id);
+  const [premiumPlans, setPremiumPlans] = useState([]);
+  const [selectedPlan, setSelectedPlan] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("wallet");
   const [myListings, setMyListings] = useState([]);
   const [selectedListingId, setSelectedListingId] = useState("");
   const [processing, setProcessing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const selected = premiumPlans.find((plan) => plan.id === selectedPlan) ?? premiumPlans[0];
+  const selected = (premiumPlans.length > 0)
+    ? (premiumPlans.find((plan) => plan.id === selectedPlan) ?? premiumPlans[0])
+    : null;
 
   const paymentMethods = [
     { id: "wallet", label: "Ví LoopBook", icon: "💳" },
@@ -32,6 +34,19 @@ export default function PremiumScreen() {
     if (data.listings) return data.listings;
     if (data.data) return data.data;
     return [];
+  }, []);
+
+  // Fetch premium plans from API
+  const fetchPlans = useCallback(async () => {
+    try {
+      const data = await listingApi.getPremiumPlans();
+      setPremiumPlans(data);
+      if (data.length > 0) {
+        setSelectedPlan(data[0].id);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch premium plans:", err);
+    }
   }, []);
 
   // Fetch user's active listings
@@ -57,8 +72,9 @@ export default function PremiumScreen() {
   }, [token, extractListings]);
 
   useEffect(() => {
+    fetchPlans();
     fetchListings();
-  }, [fetchListings]);
+  }, [fetchPlans, fetchListings]);
 
   const handleConfirmPayment = async () => {
     setShowConfirm(false);
@@ -68,8 +84,7 @@ export default function PremiumScreen() {
 
       const result = await listingApi.boostListing(
         selectedListingId,
-        plan.price,
-        plan.days,
+        plan.id,
         token
       );
 
@@ -120,7 +135,7 @@ export default function PremiumScreen() {
                 Chọn Gói Dịch Vụ
               </h3>
               <div className="space-y-2">
-                {premiumPlans.map((plan) => (
+                {premiumPlans.length > 0 ? premiumPlans.map((plan) => (
                   <button
                     key={plan.id}
                     onClick={() => setSelectedPlan(plan.id)}
@@ -142,7 +157,9 @@ export default function PremiumScreen() {
                       </span>
                     </div>
                   </button>
-                ))}
+                )) : (
+                  <p className="text-sm text-slate-400 italic px-2">Đang tải danh sách gói...</p>
+                )}
               </div>
             </div>
 
@@ -203,6 +220,7 @@ export default function PremiumScreen() {
             <h2 className="text-2xl font-bold text-slate-900 mb-6">Tóm tắt gói dịch vụ</h2>
 
             {/* Chi tiết gói */}
+            {selected ? (
             <div className="space-y-4 mb-8 pb-8 border-b border-slate-200">
               <div className="flex items-center justify-between">
                 <span className="text-slate-600 font-medium">Gói</span>
@@ -240,12 +258,17 @@ export default function PremiumScreen() {
                 )}
               </div>
             </div>
+            ) : (
+              <div className="space-y-4 mb-8 pb-8 border-b border-slate-200">
+                <p className="text-sm text-slate-400 italic">Đang tải thông tin gói dịch vụ...</p>
+              </div>
+            )}
 
             {/* Chi phí */}
             <div className="space-y-3 mb-8">
               <div className="flex items-center justify-between py-2">
                 <span className="text-slate-600">Phí dịch vụ</span>
-                <span className="font-bold text-slate-900">{formatPrice(selected.price)}</span>
+                <span className="font-bold text-slate-900">{selected ? formatPrice(selected.price) : "..."}</span>
               </div>
               <div className="flex items-center justify-between py-2">
                 <span className="text-slate-600">Phương thức</span>
@@ -255,16 +278,16 @@ export default function PremiumScreen() {
               </div>
               <div className="flex items-center justify-between py-3 px-4 bg-teal-50 border border-teal-200 rounded-lg">
                 <span className="font-bold text-teal-900">Tổng thanh toán</span>
-                <span className="text-2xl font-extrabold text-teal-700">{formatPrice(selected.price)}</span>
+                <span className="text-2xl font-extrabold text-teal-700">{selected ? formatPrice(selected.price) : "..."}</span>
               </div>
             </div>
 
             {/* Nút xác nhận */}
             <button
               onClick={handlePayment}
-              disabled={processing}
+              disabled={processing || !selected}
               className={`w-full py-3.5 px-6 font-bold rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 ${
-                processing
+                processing || !selected
                   ? "bg-slate-400 text-white cursor-not-allowed"
                   : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white"
               }`}
@@ -327,15 +350,15 @@ export default function PremiumScreen() {
             <div className="bg-slate-50 rounded-xl p-4 space-y-3 mb-6">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">Gói dịch vụ</span>
-                <span className="font-semibold text-slate-900">{selected.name}</span>
+                <span className="font-semibold text-slate-900">{selected?.name}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">Thời hạn</span>
-                <span className="font-semibold text-slate-900">{selected.days} ngày</span>
+                <span className="font-semibold text-slate-900">{selected?.days} ngày</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">Số tiền</span>
-                <span className="font-semibold text-teal-700">{formatPrice(selected.price)}</span>
+                <span className="font-semibold text-teal-700">{selected ? formatPrice(selected.price) : "..."}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">Phương thức</span>

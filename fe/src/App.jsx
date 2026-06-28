@@ -9,7 +9,6 @@ import TransactionManagement from "./components/admin/TransactionManagement";
 import PremiumManagement from "./components/admin/PremiumManagement";
 import CheckoutScreen from "./pages/CheckoutScreen";
 import TransactionSuccessScreen from "./pages/TransactionSuccessScreen";
-import MyTransactionsScreen from "./pages/MyTransactionsScreen";
 import WalletScreen from "./pages/WalletScreen";
 import DisputeManagement from "./components/admin/DisputeManagement";
 import ReportManagement from "./components/admin/ReportManagement";

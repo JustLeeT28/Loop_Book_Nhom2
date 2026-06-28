@@ -9,7 +9,7 @@ import MessagesScreen from "../../pages/MessagesScreen";
 import WalletScreen from "../../pages/WalletScreen";
 import CheckoutScreen from "../../pages/CheckoutScreen";
 import TransactionSuccessScreen from "../../pages/TransactionSuccessScreen";
-import MyTransactionsScreen from "../../pages/MyTransactionsScreen";
+      
 import PremiumScreen from "../../pages/PremiumScreen";
 import FavoritesScreen from "../../pages/FavoritesScreen";
 import TransactionsScreen from "../../pages/TransactionsScreen";
@@ -55,7 +55,7 @@ export default function AppShell() {
           <Route element={<WalletScreen />} path="/wallet" />
           <Route element={<CheckoutScreen />} path="/checkout/:bookId" />
           <Route element={<TransactionSuccessScreen />} path="/transaction/:id/success" />
-          <Route element={<MyTransactionsScreen />} path="/my-transactions" />
+          <Route element={<Navigate replace to="/giao-dich" />} path="/my-transactions" />
           <Route element={<PremiumScreen />} path="/dich-vu" />
           <Route element={<TransactionsScreen />} path="/giao-dich" />
            <Route element={<FavoritesScreen />} path="/yeu-thich" />

@@ -46,7 +46,7 @@ export default function PremiumSuccessScreen() {
 
       <div className="flex flex-col gap-3">
         <Link
-          to="/my-transactions"
+          to="/giao-dich"
           className="w-full vinted-btn-primary py-3 text-center text-sm font-bold"
         >
           Xem danh sách giao dịch
