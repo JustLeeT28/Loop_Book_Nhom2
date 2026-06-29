@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext"; // chỉnh đường dẫn nếu cần
 import { getListings, updateListingStatus, rejectListing } from "../../services/listingService";
 
 export default function ListingManagement() {
+  const navigate = useNavigate();
   const { token } = useAuth();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -176,7 +178,11 @@ export default function ListingManagement() {
                   <td>{new Date(listing.createdAt).toLocaleDateString("vi-VN")}</td>
                   <td>
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <button className="admin-btn admin-btn-secondary" style={{ padding: "6px 10px", fontSize: "12px" }}>
+                      <button 
+                        className="admin-btn admin-btn-secondary" 
+                        style={{ padding: "6px 10px", fontSize: "12px" }}
+                        onClick={() => navigate(`/sach/${listing.id}`)}
+                      >
                         Xem
                       </button>
                       {listing.status === "pending" && (

@@ -46,7 +46,8 @@ export default function TransactionManagement() {
   };
 
   const totalAmount = txList.reduce((sum, tx) => {
-    const amount = parseInt(String(tx.amount).replace(/[^\d]/g, '')) || 0;
+    // Xử lý amount: loại bỏ dấu phẩy phân cách hàng nghìn, giữ nguyên dấu chấm thập phân
+    const amount = parseFloat(String(tx.amount).replace(/,/g, '')) || 0;
     return sum + amount;
   }, 0);
 
@@ -94,7 +95,12 @@ export default function TransactionManagement() {
         </div>
         <div className="admin-stat-card">
           <p className="admin-stat-label">Tổng Giá Trị</p>
-          <p className="admin-stat-value">{(totalAmount / 1000000).toFixed(1)}M</p>
+          <p className="admin-stat-value">
+            {totalAmount >= 1000000 
+              ? (totalAmount / 1000000).toFixed(2) + 'M'
+              : (totalAmount / 1000).toFixed(0) + 'K'
+            }
+          </p>
         </div>
         <div className="admin-stat-card">
           <p className="admin-stat-label">Hoàn Tất</p>
