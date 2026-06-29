@@ -47,24 +47,15 @@ public class SecurityConfig {
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
             .authorizeHttpRequests(auth -> auth
-                // Permit all config endpoints
                 .requestMatchers("/api/config/**").permitAll()
-                // Permit OPTIONS requests (CORS preflight)
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                // Public listing viewing (GET /api/listings)
                 .requestMatchers(HttpMethod.GET, "/api/listings/**").permitAll()
-                // Public favorite count (GET /api/favorites/count/{bookId})
                 .requestMatchers(HttpMethod.GET, "/api/favorites/count/**").permitAll()
-                // Public review viewing (GET /api/reviews/book/{bookId})
                 .requestMatchers(HttpMethod.GET, "/api/reviews/book/**").permitAll()
-                // Public profile viewing (GET /api/users/{userId})
                 .requestMatchers(HttpMethod.GET, "/api/users/{userId}").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/users/*").permitAll()
-                // Public premium plans (GET /api/premium-plans)
                 .requestMatchers(HttpMethod.GET, "/api/premium-plans/**").permitAll()
-                // Admin endpoints require ADMIN role
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                // All other endpoints require authentication
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

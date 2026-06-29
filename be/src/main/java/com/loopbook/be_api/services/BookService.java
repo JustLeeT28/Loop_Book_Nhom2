@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +23,8 @@ import com.loopbook.be_api.entities.User;
 import com.loopbook.be_api.repositories.BookRepository;
 import com.loopbook.be_api.repositories.TransactionRepository;
 import com.loopbook.be_api.repositories.UserRepository;
+
+import jakarta.persistence.criteria.Predicate;
 
 @Service
 public class BookService {
@@ -61,30 +64,22 @@ public class BookService {
         book.setUrgent(request.getUrgent() != null ? request.getUrgent() : false);
         book.setAllowOffers(request.getAllowOffers() != null ? request.getAllowOffers() : true);
         book.setSellerId(sellerId);
-//        book.setStatus(request.getStatus() != null ? request.getStatus() : "active");
-        // admin duyệt trước khi được đăng bán
         if ("draft".equals(request.getStatus())) {
             book.setStatus("draft");
         } else {
-            book.setStatus("pending"); // Default to pending for admin review
+            book.setStatus("pending");
         }
         book.setViewCount(0);
         book.setFavoriteCount(0);
         book.setIsSold(false);
 
-        // Convert lists to JSON strings
         try {
             book.setImages(objectMapper.writeValueAsString(request.getImages()));
             book.setDeliveryMethods(objectMapper.writeValueAsString(request.getDeliveryMethods()));
 
-            // Build tags
             List<String> tags = new ArrayList<>();
-            if (book.getUrgent()) {
-                tags.add("Bán gấp");
-            }
-            if (book.getAllowOffers()) {
-                tags.add("Cho phép trả giá");
-            }
+            if (book.getUrgent()) tags.add("Bán gấp");
+            if (book.getAllowOffers()) tags.add("Cho phép trả giá");
             if (request.getDeliveryMethods() != null) {
                 for (String method : request.getDeliveryMethods()) {
                     if ("meet".equals(method)) tags.add("Gặp mặt");
@@ -157,7 +152,6 @@ public class BookService {
     }
 
     public Page<ListingResponse> getListingsByStatus(String status, Pageable pageable) {
-        // Ưu tiên bài boost lên trước
         return bookRepository.findByStatusOrderByBoostAndCreatedAtDesc(status, LocalDateTime.now(), pageable)
                 .map(this::mapToResponse);
     }
@@ -179,91 +173,63 @@ public class BookService {
             Integer minPrice,
             Integer maxPrice,
             String sort) {
-        
-        LocalDateTime now = LocalDateTime.now();
-        
-        // Không có filter → mặc định chỉ hiện active (ẩn sách đã bán)
-        if (status == null && category == null && school == null && 
-            minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusOrderByBoostAndCreatedAtDesc("active", now, pageable)
-                    .map(this::mapToResponse);
-        }
 
-        // Nếu chỉ lọc theo status (trường hợp phổ biến nhất: active)
-        if (status != null && category == null && school == null && 
-            minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusOrderByBoostAndCreatedAtDesc(status, now, pageable)
-                    .map(this::mapToResponse);
-        }
+        Specification<Book> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
 
-        // Lọc theo status + category
-        if (status != null && category != null && school == null && 
-            minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusAndCategoryOrderByBoostAndCreatedAtDesc(status, category, now, pageable)
-                    .map(this::mapToResponse);
-        }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (category != null) {
+                predicates.add(cb.equal(root.get("category"), category));
+            }
+            if (school != null) {
+                predicates.add(cb.equal(root.get("school"), school));
+            }
+            if (minPrice != null) {
+                predicates.add(cb.ge(root.get("price"), minPrice));
+            }
+            if (maxPrice != null) {
+                predicates.add(cb.le(root.get("price"), maxPrice));
+            }
 
-        // Lọc theo status + school
-        if (status != null && school != null && category == null && 
-            minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusAndSchoolOrderByBoostAndCreatedAtDesc(status, school, now, pageable)
-                    .map(this::mapToResponse);
-        }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
 
-        // Lọc theo status + category + school
-        if (status != null && category != null && school != null && 
-            minPrice == null && maxPrice == null) {
-            return bookRepository.findByStatusAndCategoryAndSchoolOrderByBoostAndCreatedAtDesc(status, category, school, now, pageable)
-                    .map(this::mapToResponse);
-        }
-
-        // Fallback cho các trường hợp có price filter: dùng findAll (cần custom query phức tạp hơn)
-        return bookRepository.findAll(pageable).map(this::mapToResponse);
+        return bookRepository.findAll(spec, pageable).map(this::mapToResponse);
     }
-    
+
     @Transactional
     public ListingResponse boostListing(String bookId, UUID sellerId, String planId) {
         Book book = bookRepository.findByIdAndSellerId(bookId, sellerId)
                 .orElseThrow(() -> new RuntimeException("Listing not found or unauthorized"));
         
-        // Kiểm tra sách đã có premium đang hoạt động chưa
         if (book.getBoostExpiry() != null && book.getBoostExpiry().isAfter(LocalDateTime.now())) {
             throw new RuntimeException("Sách này đã có gói Premium đang hoạt động đến " + book.getBoostExpiry().toString() + ". Vui lòng đợi hết hạn rồi mua lại.");
         }
         
-        // Validate gói dịch vụ từ DB
         PremiumPlan plan = premiumPlanService.getById(planId);
-        
-        // Trừ tiền từ wallet
         walletService.deduct(sellerId, plan.getPrice().intValue());
         
-        // Reset urgent and boostExpiry before applying new plan
-        book.setUrgent(false); // Default to false
-        book.setBoostExpiry(null); // Default to null
-        
-        book.setPremiumPlanId(planId); // Set the premium plan ID on the book
+        book.setUrgent(false);
+        book.setBoostExpiry(null);
+        book.setPremiumPlanId(planId);
 
-        // Calculate expiry for boost plans
         LocalDateTime expiry = LocalDateTime.now().plusDays(plan.getDays());
-
-        // Apply boost if plan has days (boost or combo)
         if (plan.getDays() > 0) {
             book.setBoostExpiry(expiry);
         }
-
-        // Set urgent based on planId
         if ("urgent".equals(planId) || "boost".equals(planId) || "combo".equals(planId)) {
             book.setUrgent(true);
         }
         
         Book updated = bookRepository.save(book);
         
-        // Ghi nhận giao dịch
         Transaction tx = new Transaction();
         tx.setId(UUID.randomUUID().toString());
-        tx.setBook(book.getTitle()); // book (nullable=false) - tên sách
-        tx.setPartner(sellerId.toString()); // partner (nullable=false) - user id
-        tx.setWhenTime(LocalDateTime.now().toString()); // whenTime (nullable=false)
+        tx.setBook(book.getTitle());
+        tx.setPartner(sellerId.toString());
+        tx.setWhenTime(LocalDateTime.now().toString());
         tx.setBuyerId(sellerId);
         tx.setSellerId(null);
         tx.setBookId(bookId);
@@ -315,7 +281,6 @@ public class BookService {
                             objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)) :
                     new ArrayList<>();
 
-            // Build seller info
             ListingResponse.SellerInfo sellerInfo = null;
             if (book.getSellerId() != null) {
                 User seller = userRepository.findById(book.getSellerId()).orElse(null);
@@ -343,7 +308,6 @@ public class BookService {
                     .edition(book.getEdition())
                     .school(book.getSchool())
                     .year(book.getYear())
-                    // Urgent status is true only if the book was marked urgent AND its boostExpiry is still active
                     .urgent(book.getUrgent() != null && book.getUrgent() && book.getBoostExpiry() != null && book.getBoostExpiry().isAfter(LocalDateTime.now()))
                     .boostExpiry(book.getBoostExpiry())
                     .allowOffers(book.getAllowOffers())
