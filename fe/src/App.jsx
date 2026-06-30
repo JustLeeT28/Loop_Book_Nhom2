@@ -10,7 +10,7 @@ import PremiumManagement from "./components/admin/PremiumManagement";
 import CheckoutScreen from "./pages/CheckoutScreen";
 import TransactionSuccessScreen from "./pages/TransactionSuccessScreen";
 import WalletScreen from "./pages/WalletScreen";
-import DisputeManagement from "./components/admin/DisputeManagement";
+import ComplaintManagement from "./components/admin/ComplaintManagement";
 import ReportManagement from "./components/admin/ReportManagement";
 import AdminSettings from "./components/admin/AdminSettings";
 import AppShell from "./components/layout/AppShell";
@@ -50,7 +50,7 @@ export default function App() {
           <Route element={<CategoryManagement />} path="categories" />
           <Route element={<TransactionManagement />} path="transactions" />
           <Route element={<PremiumManagement />} path="premium" />
-          <Route element={<DisputeManagement />} path="disputes" />
+          <Route element={<ComplaintManagement />} path="complaints" />
           <Route element={<ReportManagement />} path="reports" />
           <Route element={<AdminSettings />} path="settings" />
         </Route>

@@ -47,4 +47,21 @@ export const transactionApi = {
     }
     return await response.json();
   },
+
+  async submitComplaint(complaintData, authToken) {
+    const response = await fetch(`${API_URL}/complaints`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(complaintData),
+    });
+    if (!response.ok) {
+      let message = 'Failed to submit complaint';
+      try { const error = await response.json(); message = error.error || message; } catch (_) {}
+      throw new Error(message);
+    }
+    return await response.json();
+  },
 };

@@ -181,12 +181,20 @@ export default function TransactionsScreen() {
     return () => window.removeEventListener('open-report-modal', handleOpenModal);
   }, []);
 
-  const handleSubmitReport = () => {
+  const handleSubmitReport = async () => {
     if (!reportReason.trim()) return alert("Vui lòng nhập lý do khiếu nại.");
-    alert(`Đã gửi báo cáo khiếu nại cho giao dịch: ${selectedTransaction?.book}\nLý do: ${reportReason}`);
-    setReportModalOpen(false);
-    setReportReason("");
-    setSelectedTransaction(null);
+    try {
+      await transactionApi.submitComplaint({
+        transactionId: selectedTransaction?.id,
+        description: reportReason,
+      }, token);
+      alert("Đã gửi khiếu nại thành công! Chúng tôi sẽ xem xét và phản hồi sớm nhất.");
+      setReportModalOpen(false);
+      setReportReason("");
+      setSelectedTransaction(null);
+    } catch (err) {
+      alert("Gửi khiếu nại thất bại: " + err.message);
+    }
   };
 
   // Filter by tab

@@ -41,8 +41,8 @@ export default function AdminLayout() {
 
           <div className="admin-nav-section">
             <p className="admin-nav-label">Hỗ Trợ</p>
-            <NavLink to="/admin/disputes" className={({ isActive }) => isActive ? "admin-nav-link active" : "admin-nav-link"}>
-              Tranh Chấp
+            <NavLink to="/admin/complaints" className={({ isActive }) => isActive ? "admin-nav-link active" : "admin-nav-link"}>
+              Khiếu Nại
             </NavLink>
             <NavLink to="/admin/reports" className={({ isActive }) => isActive ? "admin-nav-link active" : "admin-nav-link"}>
               Báo Cáo

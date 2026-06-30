@@ -24,9 +24,6 @@ const MOCK = {
     { id: 'c2', name: 'Kinh tế', slug: 'kinh-te', accent: 'green', books_count: 0, "order": 2, is_active: true },
     { id: 'c3', name: 'Ngoại ngữ', slug: 'ngoai-ngu', accent: 'purple', books_count: 0, "order": 3, is_active: true },
   ],
-  disputes: [
-    { id: 'd1', complaint_id: null, transaction_id: 't1', buyer_id: 'u2', seller_id: 'u1', title: 'Sách không đúng mô tả', description: 'Sách có nhiều ghi chú', amount_involved: 250000, status: 'open', dispute_date: '2026-05-15' },
-  ],
   reports: [
     { id: 'r1', reporter_id: 'u1', target_type: 'user', target_id: 'fake-user-01', report_type: 'spam', description: 'Spam tin nhắn', status: 'open', report_date: '2026-05-18' },
   ],
@@ -357,9 +354,7 @@ export async function getDisputes(filters = {}, page = 1, perPage = 20) {
     return { data: enriched, total: count || 0, page, perPage };
   } catch (err) {
     console.warn('getDisputes fallback:', err?.message);
-    let mock = [...MOCK.disputes];
-    if (filters.status) mock = mock.filter(d => d.status === filters.status);
-    return applyPagination(mock, page, perPage);
+    return applyPagination([], page, perPage);
   }
 }
 
@@ -374,8 +369,6 @@ export async function updateDisputeStatus(disputeId, status, resolutionNote, res
     return data[0];
   } catch (err) {
     console.warn('updateDisputeStatus fallback:', err?.message);
-    const d = MOCK.disputes.find(d => d.id === disputeId);
-    if (d) { d.status = status; return d; }
     throw err;
   }
 }
@@ -468,7 +461,7 @@ export async function getDashboardStats() {
       totalUsers: MOCK.users.length,
       totalListings: MOCK.listings.length,
       totalTransactions: MOCK.transactions.length,
-      totalDisputes: MOCK.disputes.length,
+      totalDisputes: 0,
       totalReports: MOCK.reports.length,
     };
   }
@@ -552,6 +545,100 @@ export async function updateComplaintStatus(complaintId, status, resolutionNote,
     return data[0];
   } catch (err) {
     console.warn('updateComplaintStatus fallback:', err?.message);
+    throw err;
+  }
+}
+
+/**
+ * Bước 1 – Admin giải quyết khiếu nại.
+ * Chỉ set status (resolved_buyer | resolved_seller | dismissed), KHÔNG hoàn tiền.
+ * Nếu resolved_buyer → người bán phải xác nhận đã nhận sách (confirmBookReturned) thì mới hoàn tiền.
+ */
+export async function resolveComplaint(complaintId, status, resolutionNote) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('No auth token');
+    const response = await fetch(`http://localhost:8080/api/complaints/${complaintId}/resolve`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ status, resolutionNote })
+    });
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || 'Không thể giải quyết khiếu nại');
+    }
+    return await response.json();
+  } catch (err) {
+    console.warn('resolveComplaint error:', err?.message);
+    throw err;
+  }
+}
+
+/**
+ * Bước 2 – Người bán xác nhận đã nhận lại sách → kích hoạt refund.
+ * Gọi PUT /api/complaints/{id}/confirm-return
+ */
+export async function confirmBookReturned(complaintId) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('No auth token');
+    const response = await fetch(`http://localhost:8080/api/complaints/${complaintId}/confirm-return`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || 'Không thể xác nhận trả sách');
+    }
+    return await response.json();
+  } catch (err) {
+    console.warn('confirmBookReturned error:', err?.message);
+    throw err;
+  }
+}
+
+export async function getMyComplaints() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('No auth token');
+    const response = await fetch(`http://localhost:8080/api/complaints/my`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || 'Không thể lấy danh sách khiếu nại');
+    }
+    return await response.json();
+  } catch (err) {
+    console.warn('getMyComplaints error:', err?.message);
+    throw err;
+  }
+}
+
+export async function getComplaintsAgainstMe() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('No auth token');
+    const response = await fetch(`http://localhost:8080/api/complaints/against-me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || 'Không thể lấy danh sách khiếu nại');
+    }
+    return await response.json();
+  } catch (err) {
+    console.warn('getComplaintsAgainstMe error:', err?.message);
     throw err;
   }
 }

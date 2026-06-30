@@ -45,11 +45,14 @@ export default function TransactionManagement() {
     return "admin-badge-info";
   };
 
-  const totalAmount = txList.reduce((sum, tx) => {
-    // Xử lý amount: loại bỏ dấu phẩy phân cách hàng nghìn, giữ nguyên dấu chấm thập phân
-    const amount = parseFloat(String(tx.amount).replace(/,/g, '')) || 0;
-    return sum + amount;
-  }, 0);
+  // Tính tổng giá trị chỉ từ các giao dịch đã hoàn thành
+  const totalAmount = txList
+    .filter(tx => tx.status === 'completed' || tx.status === 'Hoàn Tất')
+    .reduce((sum, tx) => {
+      // Xử lý amount: loại bỏ tất cả ký tự không phải số (kể cả dấu chấm phân cách hàng nghìn kiểu VN)
+      const amount = parseInt(String(tx.amount).replace(/[^0-9]/g, ''), 10) || 0;
+      return sum + amount;
+    }, 0);
 
   if (loading) {
     return (
