@@ -8,11 +8,23 @@ const socket = io("http://localhost:3001");
 export default function MessagesScreen() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [messages, setMessages] = useState(conversations[0].messages);
+  const [activeConv, setActiveConv] = useState(0);
+  const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const room = "conversation_1";
   const messagesEndRef = useRef(null);
 
+  const currentConv = conversations[activeConv];
+  const currentBook = currentConv ? books.find(b => b.id === currentConv.bookId) || books[0] : books[0];
+  const room = currentConv ? currentConv.id : "conversation_1";
+
+  // Load initial messages from the conversation data
+  useEffect(() => {
+    if (currentConv) {
+      setMessages(currentConv.messages || []);
+    }
+  }, [currentConv]);
+
+  // Handle initial offer from navigation state
   useEffect(() => {
     if (location.state?.initialOffer) {
       const { bookTitle, offerPrice } = location.state.initialOffer;
@@ -26,11 +38,11 @@ export default function MessagesScreen() {
       socket.emit("send_message", offerMessage);
       setMessages((prev) => [...prev, offerMessage]);
       
-      // Clear state to prevent resending on refresh
       navigate(location.pathname, { replace: true });
     }
-  }, [location.state, navigate, location.pathname]);
+  }, [location.state, navigate, location.pathname, room]);
 
+  // Socket connection and room joining
   useEffect(() => {
     socket.emit("join_room", room);
 
@@ -41,7 +53,7 @@ export default function MessagesScreen() {
     return () => {
       socket.off("receive_message");
     };
-  }, []);
+  }, [room]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -80,9 +92,27 @@ export default function MessagesScreen() {
     }
   };
 
+  const switchConversation = (index) => {
+    setActiveConv(index);
+  };
+
+  if (!currentConv) {
+    return (
+      <div className="max-w-6xl mx-auto flex h-[calc(100vh-160px)] min-h-[600px] border border-slate-200 bg-white shadow-sm mt-6">
+        <div className="w-1/3 flex flex-col border-r border-slate-200">
+          <div className="p-4 border-b border-slate-200">
+            <h1 className="text-xl font-bold text-slate-900">Tin nhắn</h1>
+          </div>
+          <div className="flex-1 flex items-center justify-center text-slate-400">Không có tin nhắn</div>
+        </div>
+        <div className="w-2/3 flex items-center justify-center text-slate-400">Chọn một cuộc trò chuyện</div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto flex h-[calc(100vh-160px)] min-h-[600px] border border-slate-200 bg-white shadow-sm mt-6">
-      {/* Left Sidebar: Conversatons List */}
+      {/* Left Sidebar: Conversations List */}
       <div className="w-1/3 flex flex-col border-r border-slate-200">
         <div className="p-4 border-b border-slate-200">
            <h1 className="text-xl font-bold text-slate-900">Tin nhắn</h1>
@@ -90,15 +120,23 @@ export default function MessagesScreen() {
         
         <div className="flex-1 overflow-y-auto">
            {conversations.map((c, i) => (
-             <div key={c.id} className={`p-4 border-b border-slate-100 flex gap-3 cursor-pointer transition-colors ${i === 0 ? "bg-slate-50 relative" : "bg-white hover:bg-slate-50"}`}>
-               {i === 0 && <div className="absolute left-0 top-0 bottom-0 w-1 bg-teal-700"></div>}
+             <div 
+               key={c.id} 
+               onClick={() => switchConversation(i)}
+               className={`p-4 border-b border-slate-100 flex gap-3 cursor-pointer transition-colors ${
+                 i === activeConv 
+                   ? "bg-slate-50 relative" 
+                   : "bg-white hover:bg-slate-50"
+               }`}
+             >
+               {i === activeConv && <div className="absolute left-0 top-0 bottom-0 w-1 bg-teal-700"></div>}
                <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold shrink-0">{c.name.charAt(0)}</div>
                <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
                      <p className="font-bold text-slate-900 truncate pr-2">{c.name}</p>
                      <span className="text-[11px] text-slate-500 shrink-0">11:24</span>
                   </div>
-                  <p className={`text-sm truncate ${i === 0 ? "text-slate-900 font-medium" : "text-slate-500"}`}>{c.preview}</p>
+                  <p className={`text-sm truncate ${i === activeConv ? "text-slate-900 font-medium" : "text-slate-500"}`}>{c.preview}</p>
                </div>
              </div>
            ))}
@@ -109,16 +147,18 @@ export default function MessagesScreen() {
       <div className="w-2/3 flex flex-col relative bg-white">
          <div className="p-4 border-b border-slate-200 flex justify-between items-center h-[73px]">
            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold shrink-0">M</div>
-              <h2 className="font-bold text-slate-900">Minh Anh</h2>
+              <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold shrink-0">{currentConv.name.charAt(0)}</div>
+              <h2 className="font-bold text-slate-900">{currentConv.name}</h2>
            </div>
            
            <div className="flex items-center gap-3">
              <div className="text-right hidden sm:block">
-               <p className="text-sm font-bold text-slate-900">Campbell Biology 12th</p>
-               <p className="text-sm font-bold text-teal-700">125.000đ</p>
+               <p className="text-sm font-bold text-slate-900">{currentBook.title}</p>
+               {currentBook.price && (
+                 <p className="text-sm font-bold text-teal-700">{currentBook.price.toLocaleString()}đ</p>
+               )}
              </div>
-             <img src={books[0].image} className="w-10 h-10 object-cover border border-slate-200 rounded" />
+             <img src={currentBook.image} className="w-10 h-10 object-cover border border-slate-200 rounded" />
            </div>
          </div>
 
@@ -127,13 +167,13 @@ export default function MessagesScreen() {
             
             {/* System / Context Message */}
             <div className="self-center bg-slate-100 px-4 py-2 rounded-full text-xs text-slate-500 font-semibold mb-2">
-               Minh Anh đã bắt đầu cuộc trò chuyện về một tài liệu
+               {currentConv.name} đã bắt đầu cuộc trò chuyện về một tài liệu
             </div>
 
             {messages.map((m, i) => (
               <div key={i} className={`flex max-w-[70%] gap-3 ${m.from === 'me' ? "self-end flex-row-reverse" : "self-start"}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${m.from === 'me' ? 'bg-slate-200 text-slate-700' : 'bg-teal-100 text-teal-700'}`}>
-                  {m.from === 'me' ? 'M' : 'M'}
+                  {m.from === 'me' ? 'T' : currentConv.name.charAt(0)}
                 </div>
                 <div>
                    <div className={`p-3 text-[15px] leading-relaxed ${m.from === 'me' ? "bg-teal-700 text-white rounded-2xl rounded-tr-sm" : "bg-slate-100 text-slate-900 rounded-2xl rounded-tl-sm"}`}>
