@@ -158,34 +158,26 @@ export default function TopNav() {
           </div>
         </div>
 
-        {/* --- Hàng dưới: Danh mục điều hướng --- */}
-        <div className="hidden md:flex items-center gap-1 py-1 border-t border-slate-100 overflow-x-auto">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              `px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${isActive ? "text-teal-700 bg-teal-50" : "text-slate-600 hover:text-teal-700 hover:bg-slate-50"}`
-            }
-          >
-            Trang chủ
-          </NavLink>
-          <NavLink
-            to="/kham-pha"
-            className={({ isActive }) =>
-              `px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${isActive ? "text-teal-700 bg-teal-50" : "text-slate-600 hover:text-teal-700 hover:bg-slate-50"}`
-            }
-          >
-            Khám phá tài liệu
-          </NavLink>
-          {["Kinh tế", "Kỹ thuật", "Ngoại ngữ", "Luật", "Y dược", "Nông nghiệp"].map((cat) => (
-            <button
-              key={cat}
-              className="px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap text-slate-600 hover:text-teal-700 hover:bg-slate-50 transition-colors"
+          {/* --- Hàng dưới: Danh mục điều hướng --- */}
+          <div className="hidden md:flex items-center gap-1 py-1 border-t border-slate-100 overflow-x-auto">
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                `px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${isActive ? "text-teal-700 bg-teal-50" : "text-slate-600 hover:text-teal-700 hover:bg-slate-50"}`
+              }
             >
-              {cat}
-            </button>
-          ))}
-        </div>
+              Trang chủ
+            </NavLink>
+            <NavLink
+              to="/kham-pha"
+              className={({ isActive }) =>
+                `px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${isActive ? "text-teal-700 bg-teal-50" : "text-slate-600 hover:text-teal-700 hover:bg-slate-50"}`
+              }
+            >
+              Khám phá tài liệu
+            </NavLink>
+          </div>
       </div>
     </header>
   );

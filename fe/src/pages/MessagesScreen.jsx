@@ -5,6 +5,7 @@ import { supabase } from "../services/supabase";
 import { io } from "socket.io-client";
 
 const socket = io("http://localhost:3001");
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
 /**
  * Parse conversation id để lấy thông tin 2 user và book.
@@ -29,7 +30,9 @@ export default function MessagesScreen() {
   const [activeConvIndex, setActiveConvIndex] = useState(-1);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const currentConv = conversations[activeConvIndex] || null;
   const room = currentConv?.id || "default";
@@ -77,10 +80,9 @@ export default function MessagesScreen() {
     if (!userData?.id) return;
 
     const loadAllConversations = async () => {
-      // Lấy các message user tham gia
       const { data: msgData, error } = await supabase
         .from("lb_messages")
-        .select("conversation_id, sender_id, receiver_id, text, book_id, created_at")
+        .select("conversation_id, sender_id, receiver_id, text, book_id, created_at, image_url, message_type")
         .or(`sender_id.eq.${userData.id},receiver_id.eq.${userData.id}`)
         .order("created_at", { ascending: false });
 
@@ -89,7 +91,6 @@ export default function MessagesScreen() {
         return;
       }
 
-      // Gom nhóm theo conversation_id, lấy tin nhắn cuối cùng mỗi nhóm
       const convMap = new Map();
       const seenConvIds = new Set();
 
@@ -105,23 +106,20 @@ export default function MessagesScreen() {
             otherUserId: otherId,
             name: otherId?.substring(0, 8) || "Người dùng",
             bookId: msg.book_id || null,
-            preview: msg.text || "",
+            preview: msg.text || "[Hình ảnh]",
             messages: [],
           });
         }
       }
 
-      // Fetch tên người dùng và thông tin sách cho từng conversation
       const allConvs = Array.from(convMap.values());
 
       const convsWithMessages = await Promise.all(
         allConvs.map(async (conv) => {
-          // Lấy tên người dùng
           const otherId = userData.id === conv.sellerId ? conv.otherUserId : conv.sellerId;
           const fetchedName = await getUserName(otherId);
           const fetchedBookInfo = await getBookInfo(conv.bookId);
 
-          // Load messages cho conversation này
           const { data: messagesData } = await supabase
             .from("lb_messages")
             .select("*")
@@ -135,6 +133,8 @@ export default function MessagesScreen() {
               room: m.conversation_id,
               from: m.sender_id === userData.id ? "me" : "other",
               text: m.text,
+              imageUrl: m.image_url || null,
+              messageType: m.message_type || "text",
               time: m.created_at
                 ? new Date(m.created_at).toLocaleTimeString([], {
                     hour: "2-digit",
@@ -156,12 +156,15 @@ export default function MessagesScreen() {
             bookImage: fetchedBookInfo?.bookImage || null,
             bookPrice: fetchedBookInfo?.bookPrice || null,
             messages: msgs,
-            preview: msgs.length > 0 ? msgs[msgs.length - 1].text : conv.preview,
+            preview: msgs.length > 0
+              ? (msgs[msgs.length - 1].messageType === "image"
+                  ? "[Hình ảnh]"
+                  : msgs[msgs.length - 1].text)
+              : conv.preview,
           };
         })
       );
 
-      // Sắp xếp: conversation mới nhất lên đầu
       convsWithMessages.sort((a, b) => {
         const aLast = a.messages?.[a.messages.length - 1]?.time || "";
         const bLast = b.messages?.[b.messages.length - 1]?.time || "";
@@ -209,7 +212,7 @@ export default function MessagesScreen() {
     window.history.replaceState({}, document.title);
   }, [location.state, userData?.id]);
 
-  // ---- Join user room (để nhận thông báo real-time kể cả khi chưa mở conversation) ----
+  // ---- Join user room ----
   useEffect(() => {
     if (userData?.id) {
       socket.emit("join_user_room", userData.id);
@@ -229,8 +232,6 @@ export default function MessagesScreen() {
   useEffect(() => {
     const handleReceive = (data) => {
       const msgRoom = data.room || data.conversation_id;
-
-      // Fix: Nếu message đến từ người khác (senderId !== user hiện tại), set from="other"
       const isFromMe = data.senderId === userData?.id;
       const fixedData = { ...data, from: isFromMe ? "me" : "other" };
 
@@ -239,14 +240,19 @@ export default function MessagesScreen() {
         return [...prev, fixedData];
       });
 
-      // Cập nhật conversations
       setConversations((prevConvs) => {
         let found = false;
         const convs = prevConvs.map((c) => {
           if (c.id === msgRoom) {
             found = true;
             const newMsgs = [...(c.messages || []), fixedData];
-            return { ...c, messages: newMsgs, preview: fixedData.text };
+            return {
+              ...c,
+              messages: newMsgs,
+              preview: data.messageType === "image"
+                ? "[Hình ảnh]"
+                : fixedData.text,
+            };
           }
           return c;
         });
@@ -261,7 +267,9 @@ export default function MessagesScreen() {
             sellerId: data.senderId,
             otherUserId: data.receiverId,
             bookId: data.bookId || null,
-            preview: fixedData.text,
+            preview: data.messageType === "image"
+              ? "[Hình ảnh]"
+              : fixedData.text,
             messages: [fixedData],
           });
         }
@@ -310,7 +318,7 @@ export default function MessagesScreen() {
       setConversations((prevConvs) => {
         return prevConvs.map((c) => {
           if (c.id === room) {
-            return { ...c, messages: updated, preview: messageData.text };
+            return { ...c, messages: updated, preview: messageData.messageType === "image" ? "[Hình ảnh]" : messageData.text };
           }
           return c;
         });
@@ -326,6 +334,7 @@ export default function MessagesScreen() {
       room,
       from: "me",
       text: newMessage,
+      messageType: "text",
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -340,6 +349,76 @@ export default function MessagesScreen() {
     socket.emit("send_message", messageData);
     sendMessageLocally(messageData);
     setNewMessage("");
+  };
+
+  // ---- Upload ảnh và gửi ----
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentConv || !userData?.id) return;
+
+    // Validate
+    if (!file.type.startsWith("image/")) {
+      alert("Chỉ chấp nhận file ảnh!");
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      alert("Ảnh không được quá 5MB!");
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      // Upload ảnh lên Supabase Storage
+      const fileExt = file.name.split(".").pop();
+      const fileName = `chat_${userData.id}_${Date.now()}.${fileExt}`;
+      const filePath = `messages/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("chat-images")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Lấy public URL
+      const { data: urlData } = supabase.storage
+        .from("chat-images")
+        .getPublicUrl(filePath);
+
+      const imageUrl = urlData?.publicUrl;
+
+      // Gửi tin nhắn ảnh qua socket
+      const messageData = {
+        room,
+        from: "me",
+        text: "",
+        imageUrl,
+        messageType: "image",
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        senderId: userData?.id,
+        senderName: userData?.name || userData?.email || userData?.id?.substring(0, 8),
+        receiverId: currentConv.sellerId,
+        receiverName: currentConv.name,
+        bookId: currentConv.bookId || null,
+      };
+
+      socket.emit("send_message", messageData);
+      sendMessageLocally(messageData);
+    } catch (err) {
+      console.error("Upload image failed:", err);
+      alert("Gửi ảnh thất bại: " + (err.message || "Lỗi không xác định"));
+    } finally {
+      setUploadingImage(false);
+      // Reset input file
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   };
 
   // Mark messages as read khi active conversation thay đổi
@@ -357,6 +436,11 @@ export default function MessagesScreen() {
 
   const switchConversation = (index) => {
     setActiveConvIndex(index);
+  };
+
+  const goToUserProfile = (userId, e) => {
+    if (e) e.stopPropagation();
+    if (userId) navigate(`/user/${userId}`);
   };
 
   // ---------- RENDER ----------
@@ -418,7 +502,11 @@ export default function MessagesScreen() {
               {i === activeConvIndex && (
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-teal-700"></div>
               )}
-              <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold shrink-0">
+              <div
+                className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold shrink-0 cursor-pointer hover:bg-teal-200 transition-colors"
+                onClick={(e) => goToUserProfile(c.otherUserId, e)}
+                title="Xem trang cá nhân"
+              >
                 {c.name.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
@@ -454,7 +542,11 @@ export default function MessagesScreen() {
       <div className="w-2/3 flex flex-col relative bg-white">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center h-[73px]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold shrink-0">
+            <div
+              className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold shrink-0 cursor-pointer hover:bg-teal-200 transition-colors"
+              onClick={() => goToUserProfile(currentConv?.otherUserId)}
+              title="Xem trang cá nhân"
+            >
               {currentConv?.name?.charAt(0) || "N"}
             </div>
             <h2 className="font-bold text-slate-900">
@@ -463,7 +555,11 @@ export default function MessagesScreen() {
           </div>
 
           {currentConv?.bookTitle && (
-            <div className="flex items-center gap-3">
+            <div
+              className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-2 -mr-2 rounded-lg transition-colors"
+              onClick={() => currentConv.bookId && navigate(`/sach/${currentConv.bookId}`)}
+              title="Xem chi tiết sách"
+            >
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-slate-900">
                   {currentConv.bookTitle}
@@ -509,30 +605,61 @@ export default function MessagesScreen() {
                 className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
                   m.from === "me"
                     ? "bg-slate-200 text-slate-700"
-                    : "bg-teal-100 text-teal-700"
-                }`}
+                    : "bg-teal-100 text-teal-700 hover:bg-teal-200"
+                } cursor-pointer transition-colors`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (m.from === "other") {
+                    goToUserProfile(m.senderId);
+                  } else {
+                    navigate("/profile");
+                  }
+                }}
+                title={m.from === "me" ? "Trang cá nhân của tôi" : "Xem trang cá nhân"}
               >
                 {m.from === "me"
                   ? userData?.name?.charAt(0) || "T"
                   : currentConv?.name?.charAt(0) || "N"}
               </div>
               <div>
-                <div
-                  className={`p-3 text-[15px] leading-relaxed ${
-                    m.from === "me"
-                      ? "bg-teal-700 text-white rounded-2xl rounded-tr-sm"
-                      : "bg-slate-100 text-slate-900 rounded-2xl rounded-tl-sm"
-                  }`}
-                >
-                  {m.text}
-                </div>
-                <div
-                  className={`text-[11px] text-slate-400 mt-1 uppercase ${
-                    m.from === "me" ? "text-right" : "text-left"
-                  }`}
-                >
-                  {m.time}
-                </div>
+                {m.messageType === "image" && m.imageUrl ? (
+                  <div>
+                    <img
+                      src={m.imageUrl}
+                      alt="Hình ảnh"
+                      className={`max-w-[280px] max-h-[300px] rounded-xl object-cover border border-slate-200 cursor-pointer ${
+                        m.from === "me" ? "" : ""
+                      }`}
+                      onClick={() => window.open(m.imageUrl, "_blank")}
+                    />
+                    <div
+                      className={`text-[11px] text-slate-400 mt-1 uppercase ${
+                        m.from === "me" ? "text-right" : "text-left"
+                      }`}
+                    >
+                      {m.time}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div
+                      className={`p-3 text-[15px] leading-relaxed ${
+                        m.from === "me"
+                          ? "bg-teal-700 text-white rounded-2xl rounded-tr-sm"
+                          : "bg-slate-100 text-slate-900 rounded-2xl rounded-tl-sm"
+                      }`}
+                    >
+                      {m.text}
+                    </div>
+                    <div
+                      className={`text-[11px] text-slate-400 mt-1 uppercase ${
+                        m.from === "me" ? "text-right" : "text-left"
+                      }`}
+                    >
+                      {m.time}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -542,6 +669,32 @@ export default function MessagesScreen() {
         {/* Input */}
         <div className="p-4 border-t border-slate-200">
           <div className="flex items-center gap-3">
+            {/* Nút chọn ảnh */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingImage || !currentConv}
+              className="p-3 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded-full transition-colors shrink-0 disabled:opacity-50"
+              title="Gửi ảnh"
+            >
+              {uploadingImage ? (
+                <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              )}
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImageSelect}
+              accept="image/*"
+              className="hidden"
+            />
+
             <input
               type="text"
               className="vinted-input m-0 flex-1 bg-slate-50 border-transparent focus:border-teal-500 focus:bg-white focus:ring-0"

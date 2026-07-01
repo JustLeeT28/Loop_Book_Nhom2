@@ -16,6 +16,7 @@ import TransactionsScreen from "../../pages/TransactionsScreen";
 import MyComplaintsScreen from "../../pages/MyComplaintsScreen";
 import DashboardScreen from "../../pages/DashboardScreen";
 import ProfileScreen from "../../pages/ProfileScreen";
+import UserProfileScreen from "../../pages/UserProfileScreen";
 import AuthModal from "../auth/AuthModal";
 
 export default function AppShell() {
@@ -61,6 +62,7 @@ export default function AppShell() {
           <Route element={<TransactionsScreen />} path="/giao-dich" />
            <Route element={<FavoritesScreen />} path="/yeu-thich" />
            <Route element={<ProfileScreen />} path="/profile" />
+           <Route element={<UserProfileScreen />} path="/user/:userId" />
            <Route element={<MyComplaintsScreen />} path="/khieu-nai" />
 
           <Route element={<DashboardScreen />} path="/quan-ly" />
