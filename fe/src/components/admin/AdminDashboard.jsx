@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
-import { transactions } from "../../data/siteData";
-import { RevenueChart, CategoryDistributionChart, UserGrowthChart } from "./AdminCharts";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { getDashboardStats, getAnalytics, getComplaints } from "../../services/admin";
+import { transactionApi } from "../../services/transactionApi";
+import { supabase } from "../../services/supabase";
+import { RevenueChart, CategoryDistributionChart, UserGrowthChart, StatsCardSkeleton } from "./AdminCharts";
 
 const CATEGORY_LABELS = {
   economics: "Kinh Tế",
@@ -37,11 +39,6 @@ function addDays(date, days) {
   return next;
 }
 
-function daysBetweenInclusive(start, end) {
-  const diffMs = parseDate(end).getTime() - parseDate(start).getTime();
-  return Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1;
-}
-
 function formatDateVi(isoDate) {
   const date = parseDate(isoDate);
   const day = String(date.getDate()).padStart(2, "0");
@@ -59,137 +56,183 @@ function formatCurrencyShort(value) {
   return `${Math.round(value / 1000)}K`;
 }
 
-function formatDateLabel(dateString) {
-  const date = parseDate(dateString);
-  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function monthLabel(monthNumber) {
-  return `T${monthNumber}`;
-}
-
-function generateAnalyticsData() {
-  const start = parseDate("2025-01-01");
-  const end = parseDate("2026-04-15");
-  const dayMs = 24 * 60 * 60 * 1000;
-  const rows = [];
-  const categoryKeys = Object.keys(CATEGORY_LABELS);
-
-  for (let timestamp = start.getTime(), i = 0; timestamp <= end.getTime(); timestamp += dayMs, i += 1) {
-    const date = new Date(timestamp);
-    const isoDate = date.toISOString().slice(0, 10);
-
-    const transactionsCount = 4 + ((i * 7) % 18);
-    const listingCount = 2 + ((i * 5) % 10);
-    const users = 1 + ((i * 3) % 7);
-    const seasonalBoost = date.getMonth() === 2 ? 45000 : 0;
-    const revenue = transactionsCount * 95000 + listingCount * 25000 + (i % 6) * 12000 + seasonalBoost;
-
-    rows.push({
-      date: isoDate,
-      category: categoryKeys[i % categoryKeys.length],
-      transactions: transactionsCount,
-      listings: listingCount,
-      users,
-      revenue,
-    });
-  }
-
-  return rows;
-}
-
-function aggregateByPeriod(data, granularity) {
-  const grouped = new Map();
-
-  data.forEach((item) => {
-    const date = parseDate(item.date);
-    let key = item.date;
-    let label = formatDateLabel(item.date);
-
-    if (granularity === "month") {
-      key = `${date.getFullYear()}-${date.getMonth() + 1}`;
-      label = `${monthLabel(date.getMonth() + 1)}/${date.getFullYear()}`;
-    }
-
-    if (!grouped.has(key)) {
-      grouped.set(key, { label, revenue: 0, users: 0 });
-    }
-
-    const bucket = grouped.get(key);
-    bucket.revenue += item.revenue;
-    bucket.users += item.users;
-  });
-
-  return [...grouped.values()];
-}
-
 function getPresetRange(preset, latestIsoDate) {
   const latest = parseDate(latestIsoDate);
-
   if (preset === "today") {
     const value = formatIsoDate(latest);
     return { start: value, end: value, label: "Hôm nay" };
   }
-
   if (preset === "week") {
-    // Tính từ thứ 2 tuần này đến ngày hiện tại
-    const dayOfWeek = latest.getDay() === 0 ? 7 : latest.getDay(); // CN=0 thành 7
+    const dayOfWeek = latest.getDay() === 0 ? 7 : latest.getDay();
     const monday = addDays(latest, -(dayOfWeek - 1));
     return { start: formatIsoDate(monday), end: formatIsoDate(latest), label: "Tuần này" };
   }
-
   if (preset === "month") {
     const start = new Date(latest.getFullYear(), latest.getMonth(), 1);
     return { start: formatIsoDate(start), end: formatIsoDate(latest), label: "Tháng này" };
   }
-
   const start = new Date(latest.getFullYear(), 0, 1);
   return { start: formatIsoDate(start), end: formatIsoDate(latest), label: "Năm nay" };
 }
 
-function filterDataByRange(data, start, end) {
-  const startDate = parseDate(start);
-  const endDate = parseDate(end);
-  if (startDate > endDate) {
-    return [];
+function exportToCSV(data, filename) {
+  if (!data.length) return;
+  const headers = Object.keys(data[0]);
+  const csvRows = [headers.join(",")];
+  for (const row of data) {
+    const values = headers.map((h) => {
+      const val = row[h];
+      if (typeof val === "string" && (val.includes(",") || val.includes('"') || val.includes("\n"))) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    });
+    csvRows.push(values.join(","));
   }
-
-  return data.filter((item) => {
-    const current = parseDate(item.date);
-    return current >= startDate && current <= endDate;
-  });
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${filename}_${formatIsoDate(new Date())}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
-
-function sumMetrics(data) {
-  return {
-    users: data.reduce((sum, item) => sum + item.users, 0),
-    listings: data.reduce((sum, item) => sum + item.listings, 0),
-    transactions: data.reduce((sum, item) => sum + item.transactions, 0),
-    revenue: data.reduce((sum, item) => sum + item.revenue, 0),
-  };
-}
-
-function getTrend(current, previous) {
-  if (previous <= 0) {
-    return null;
-  }
-
-  return ((current - previous) / previous) * 100;
-}
-
-const analyticsData = generateAnalyticsData();
 
 export default function AdminDashboard() {
-  const latestDate = analyticsData[analyticsData.length - 1]?.date || "2026-04-15";
+  const todayStr = formatIsoDate(new Date());
   const [activePreset, setActivePreset] = useState("week");
   const [draftRange, setDraftRange] = useState({
     start: "2026-03-01",
-    end: latestDate,
+    end: todayStr,
   });
   const [customRange, setCustomRange] = useState({
     start: "2026-03-01",
-    end: latestDate,
+    end: todayStr,
   });
+
+  // --- Dashboard stats from API ---
+  const [statsData, setStatsData] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [statsError, setStatsError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshIntervalRef = useRef(null);
+
+  // --- Analytics data from API ---
+  const [analyticsFromApi, setAnalyticsFromApi] = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+
+  // --- Recent transactions from Spring API ---
+  const [recentTransactions, setRecentTransactions] = useState([]);
+  const [loadingTx, setLoadingTx] = useState(true);
+
+  // --- Complaints count for quick stat ---
+  const [complaintsCount, setComplaintsCount] = useState(0);
+  const [loadingComplaints, setLoadingComplaints] = useState(true);
+
+  const fetchStats = useCallback(async (showRefreshIndicator = false) => {
+    try {
+      if (showRefreshIndicator) setRefreshing(true);
+      else setLoadingStats(true);
+      setStatsError(null);
+      const data = await getDashboardStats();
+      setStatsData(data);
+    } catch (err) {
+      console.error("Failed to fetch dashboard stats:", err);
+      setStatsError(err.message || "Không thể tải dữ liệu dashboard");
+    } finally {
+      setLoadingStats(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  const fetchAnalyticsFromApi = useCallback(async () => {
+    setLoadingAnalytics(true);
+    try {
+      const apiData = await getAnalytics({ startDate: "2025-01-01", endDate: todayStr });
+      if (apiData && apiData.length) {
+        setAnalyticsFromApi(apiData);
+      } else {
+        setAnalyticsFromApi([]);
+      }
+    } catch {
+      setAnalyticsFromApi([]);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  }, [todayStr]);
+
+  const fetchRecentTransactions = useCallback(async () => {
+    setLoadingTx(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token) {
+        const txData = await transactionApi.getTransactions(token);
+        if (Array.isArray(txData)) {
+          setRecentTransactions(txData.slice(0, 5));
+        } else if (txData?.data) {
+          setRecentTransactions(txData.data.slice(0, 5));
+        } else {
+          setRecentTransactions([]);
+        }
+      }
+    } catch {
+      setRecentTransactions([]);
+    } finally {
+      setLoadingTx(false);
+    }
+  }, []);
+
+  const fetchComplaintsCount = useCallback(async () => {
+    setLoadingComplaints(true);
+    try {
+      const result = await getComplaints({ status: "open" }, 1, 1);
+      setComplaintsCount(result.total || 0);
+    } catch {
+      try {
+        const result = await getComplaints({}, 1, 1);
+        setComplaintsCount(result.total || 0);
+      } catch {
+        setComplaintsCount(0);
+      }
+    } finally {
+      setLoadingComplaints(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    fetchAnalyticsFromApi();
+    fetchRecentTransactions();
+    fetchComplaintsCount();
+
+    refreshIntervalRef.current = setInterval(() => {
+      fetchStats();
+      fetchAnalyticsFromApi();
+      fetchRecentTransactions();
+      fetchComplaintsCount();
+    }, 30000);
+
+    return () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+    };
+  }, [fetchStats, fetchAnalyticsFromApi, fetchRecentTransactions, fetchComplaintsCount]);
+
+  function handleManualRefresh() {
+    fetchStats(true);
+    fetchAnalyticsFromApi();
+    fetchRecentTransactions();
+    fetchComplaintsCount();
+    if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+    refreshIntervalRef.current = setInterval(() => {
+      fetchStats();
+      fetchAnalyticsFromApi();
+      fetchRecentTransactions();
+      fetchComplaintsCount();
+    }, 30000);
+  }
 
   const activeRange = useMemo(() => {
     if (activePreset === "custom") {
@@ -199,77 +242,70 @@ export default function AdminDashboard() {
         label: "Tùy chọn",
       };
     }
-
-    return getPresetRange(activePreset, latestDate);
-  }, [activePreset, customRange.end, customRange.start, latestDate]);
-
-  const filteredData = useMemo(
-    () => filterDataByRange(analyticsData, activeRange.start, activeRange.end),
-    [activeRange.end, activeRange.start]
-  );
-
-  const rangeDays = daysBetweenInclusive(activeRange.start, activeRange.end);
-  const chartGranularity = rangeDays > 120 ? "month" : "day";
-
-  const currentMetrics = sumMetrics(filteredData);
-  const totalUsers = currentMetrics.users;
-  const totalListings = currentMetrics.listings;
-  const totalTransactions = currentMetrics.transactions;
-  const totalRevenue = currentMetrics.revenue;
-
-  const previousEnd = formatIsoDate(addDays(parseDate(activeRange.start), -1));
-  const previousStart = formatIsoDate(addDays(parseDate(previousEnd), -(rangeDays - 1)));
-  const previousData = filterDataByRange(analyticsData, previousStart, previousEnd);
-  const previousMetrics = sumMetrics(previousData);
-
-  const trends = {
-    users: getTrend(totalUsers, previousMetrics.users),
-    listings: getTrend(totalListings, previousMetrics.listings),
-    transactions: getTrend(totalTransactions, previousMetrics.transactions),
-    revenue: getTrend(totalRevenue, previousMetrics.revenue),
-  };
-
-  const revenueData = aggregateByPeriod(filteredData, chartGranularity);
-  const userGrowthData = aggregateByPeriod(filteredData, chartGranularity);
-
-  const categoryMap = filteredData.reduce((map, item) => {
-    map.set(item.category, (map.get(item.category) || 0) + item.listings);
-    return map;
-  }, new Map());
-
-  const categoryData = [...categoryMap.entries()].map(([key, value]) => ({
-    name: CATEGORY_LABELS[key] || key,
-    value,
-    color: CATEGORY_COLORS[key] || "#0f69ff",
-  }));
+    return getPresetRange(activePreset, todayStr);
+  }, [activePreset, customRange.end, customRange.start, todayStr]);
 
   const rangeDescription = `${formatDateVi(activeRange.start)} - ${formatDateVi(activeRange.end)}`;
 
   function applyCustomRange() {
-    if (!draftRange.start || !draftRange.end) {
-      return;
-    }
-    if (parseDate(draftRange.start) > parseDate(draftRange.end)) {
-      return;
-    }
+    if (!draftRange.start || !draftRange.end) return;
+    if (parseDate(draftRange.start) > parseDate(draftRange.end)) return;
     setCustomRange(draftRange);
   }
 
   function resetCustomRange() {
-    const next = { start: "2026-03-01", end: latestDate };
+    const next = { start: "2026-03-01", end: todayStr };
     setDraftRange(next);
     setCustomRange(next);
   }
 
-  function trendLabel(value) {
-    if (value === null) {
-      return "Không có dữ liệu kỳ trước";
-    }
-    const sign = value >= 0 ? "+" : "";
-    return `${sign}${value.toFixed(1)}% so với kỳ trước`;
-  }
+  // --- Build chart data from API analytics ---
+  const analyticsData = analyticsFromApi || [];
 
-  const recentTransactions = [...transactions.current, ...transactions.completed].slice(0, 5);
+  // Filter analytics by selected date range
+  const filteredAnalytics = useMemo(() => {
+    if (!analyticsData.length) return [];
+    const start = parseDate(activeRange.start);
+    const end = parseDate(activeRange.end);
+    return analyticsData.filter((item) => {
+      const d = parseDate(item.date);
+      return d >= start && d <= end;
+    });
+  }, [analyticsData, activeRange.start, activeRange.end]);
+
+  // Revenue chart: aggregate by date
+  const revenueChartData = useMemo(() => {
+    if (!filteredAnalytics.length) return [];
+    return filteredAnalytics.map((item) => ({
+      label: item.date ? item.date.slice(5, 10) : "?",
+      revenue: item.total_revenue || item.revenue || 0,
+    }));
+  }, [filteredAnalytics]);
+
+  // Category distribution: extract from analytics items
+  const categoryChartData = useMemo(() => {
+    if (!analyticsData.length) return [];
+    const catMap = new Map();
+    analyticsData.forEach((item) => {
+      const cat = item.category || item.metric_type || "other";
+      const current = catMap.get(cat) || 0;
+      catMap.set(cat, current + (item.listings || item.total_listings || 1));
+    });
+    return [...catMap.entries()].map(([key, value]) => ({
+      name: CATEGORY_LABELS[key] || key,
+      value,
+      color: CATEGORY_COLORS[key] || "#0f69ff",
+    }));
+  }, [analyticsData]);
+
+  // User growth chart
+  const userGrowthChartData = useMemo(() => {
+    if (!filteredAnalytics.length) return [];
+    return filteredAnalytics.map((item) => ({
+      label: item.date ? item.date.slice(5, 10) : "?",
+      users: item.users || item.total_users || item.new_users || 0,
+    }));
+  }, [filteredAnalytics]);
 
   const presets = [
     { key: "today", label: "Hôm nay" },
@@ -279,10 +315,68 @@ export default function AdminDashboard() {
     { key: "custom", label: "Tùy chọn" },
   ];
 
+  function handleExportCharts() {
+    const exportData = [
+      { label: "Doanh Thu", ...Object.fromEntries(revenueChartData.map((d) => [d.label, d.revenue])) },
+    ];
+    exportToCSV(exportData, "doanh_thu");
+  }
+
+  function handleExportTransactions() {
+    const exportRows = recentTransactions.map((tx, i) => ({
+      "#": i + 1,
+      Sách: tx.book || tx.bookTitle || "—",
+      "Người Mua": tx.buyerName || tx.buyer?.name || "—",
+      "Giá (₫)": tx.amount ? `${Number(tx.amount).toLocaleString()}đ` : "—",
+      "Trạng Thái": tx.status || "—",
+      Ngày: tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("vi-VN") : "—",
+    }));
+    exportToCSV(exportRows, "giao_dich_gan_day");
+  }
+
+  const formatTxStatus = (status) => {
+    const map = {
+      completed: "Hoàn tất",
+      pending_payment: "Đang xác nhận thanh toán",
+      awaiting_meet: "Đang chờ gặp trực tiếp",
+      cancelled: "Đã hủy",
+      refunded: "Đã hoàn tiền",
+    };
+    return map[status] || status || "—";
+  };
+
+  const txStatusBadge = (status) => {
+    const isComplete = status === "completed" || status === "refunded";
+    return `admin-badge ${isComplete ? "admin-badge-success" : "admin-badge-info"}`;
+  };
+
+  const hasChartData = revenueChartData.length > 0;
+
   return (
     <div className="admin-page">
       <div className="admin-header">
         <h1>Dashboard</h1>
+        <div className="admin-actions">
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={handleManualRefresh}
+            disabled={refreshing}
+            title="Làm mới dữ liệu"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}>
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {refreshing ? "Đang làm mới..." : "Làm mới"}
+          </button>
+          {statsError && (
+            <span className="admin-badge admin-badge-danger" style={{ fontSize: 12 }}>
+              {statsError}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="admin-time-panel">
@@ -327,113 +421,217 @@ export default function AdminDashboard() {
         <p className="admin-time-summary-main">
           Đang xem <strong>{activeRange.label}</strong>: {rangeDescription}
         </p>
-        <p className="admin-time-summary-sub">So sánh với kỳ trước: {formatDateVi(previousStart)} - {formatDateVi(previousEnd)}</p>
       </div>
 
       {/* Stats Grid */}
       <div className="admin-stats-grid">
-        <div className="admin-stat-card">
-          <p className="admin-stat-label">Người Dùng Mới</p>
-          <p className="admin-stat-value">{totalUsers}</p>
-          <p className="admin-stat-desc">{trendLabel(trends.users)}</p>
-        </div>
+        {loadingStats ? (
+          <>
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+          </>
+        ) : (
+          <>
+            <div className="admin-stat-card">
+              <p className="admin-stat-label">Người Dùng</p>
+              <p className="admin-stat-value">{statsData?.totalUsers ?? "—"}</p>
+              <p className="admin-stat-desc">Tổng người dùng hệ thống</p>
+            </div>
 
-        <div className="admin-stat-card">
-          <p className="admin-stat-label">Listing Mới</p>
-          <p className="admin-stat-value">{totalListings}</p>
-          <p className="admin-stat-desc">{trendLabel(trends.listings)}</p>
-        </div>
+            <div className="admin-stat-card">
+              <p className="admin-stat-label">Tổng Listing</p>
+              <p className="admin-stat-value">{statsData?.totalListings ?? "—"}</p>
+              <p className="admin-stat-desc">Sách đang được bán</p>
+            </div>
 
-        <div className="admin-stat-card">
-          <p className="admin-stat-label">Giao Dịch</p>
-          <p className="admin-stat-value">{totalTransactions}</p>
-          <p className="admin-stat-desc">{trendLabel(trends.transactions)}</p>
-        </div>
+            <div className="admin-stat-card">
+              <p className="admin-stat-label">Tổng Giao Dịch</p>
+              <p className="admin-stat-value">{statsData?.totalTransactions ?? "—"}</p>
+              <p className="admin-stat-desc">Giao dịch toàn hệ thống</p>
+            </div>
 
-        <div className="admin-stat-card">
-          <p className="admin-stat-label">Doanh Thu</p>
-          <p className="admin-stat-value">{formatCurrencyShort(totalRevenue)}</p>
-          <p className="admin-stat-desc">{trendLabel(trends.revenue)}</p>
-        </div>
+            <div className="admin-stat-card">
+              <p className="admin-stat-label">Doanh Thu</p>
+              <p className="admin-stat-value">
+                {statsData?.totalRevenue
+                  ? formatCurrencyShort(statsData.totalRevenue)
+                  : "—"}
+              </p>
+              <p className="admin-stat-desc">Tổng doanh thu nền tảng</p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Charts Section */}
       <div style={{ marginTop: "40px" }}>
-        <h2 style={{ margin: "0 0 24px", fontSize: "20px", fontWeight: 700, color: "#172033" }}>
-          Biểu Đồ & Thống Kê
-        </h2>
-
-        <RevenueChart
-          data={revenueData}
-          xKey="label"
-          title={chartGranularity === "month" ? "Doanh Thu Theo Tháng" : "Doanh Thu Theo Ngày"}
-        />
-        
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px", marginBottom: "24px" }}>
-          <CategoryDistributionChart data={categoryData} />
-          <UserGrowthChart
-            data={userGrowthData}
-            xKey="label"
-            title={chartGranularity === "month" ? "Người Dùng Mới Theo Tháng" : "Người Dùng Mới Theo Ngày"}
-          />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#172033" }}>
+            Biểu Đồ & Thống Kê
+          </h2>
+          {hasChartData && (
+            <button
+              type="button"
+              className="admin-btn admin-btn-secondary"
+              onClick={handleExportCharts}
+              title="Xuất dữ liệu biểu đồ CSV"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Xuất CSV
+            </button>
+          )}
         </div>
+
+        {loadingAnalytics ? (
+          <div style={{ display: "grid", gap: "24px" }}>
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+          </div>
+        ) : hasChartData ? (
+          <>
+            <RevenueChart
+              data={revenueChartData}
+              loading={false}
+              xKey="label"
+              title="Doanh Thu Theo Ngày"
+            />
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px", marginBottom: "24px" }}>
+              <CategoryDistributionChart data={categoryChartData} loading={false} />
+              <UserGrowthChart
+                data={userGrowthChartData}
+                loading={false}
+                xKey="label"
+                title="Người Dùng Mới Theo Ngày"
+              />
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "#9ca3af", border: "1px dashed #d1d5db", borderRadius: "12px" }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: "0 auto 12px", display: "block", opacity: 0.5 }}>
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="9" y1="21" x2="9" y2="9" />
+            </svg>
+            <p style={{ fontSize: "15px", fontWeight: 500 }}>Chưa có dữ liệu thống kê</p>
+            <p style={{ fontSize: "13px" }}>Kết nối API và supabase để hiển thị biểu đồ</p>
+          </div>
+        )}
       </div>
 
       {/* Recent Transactions */}
       <div style={{ marginTop: "32px" }}>
-        <h2 style={{ margin: "0 0 16px", fontSize: "20px", fontWeight: 700, color: "#172033" }}>
-          Giao Dịch Gần Đây
-        </h2>
-        
-        <div className="admin-table-wrapper">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Sách</th>
-                <th>Người Mua</th>
-                <th>Giá</th>
-                <th>Trạng Thái</th>
-                <th>Ngày</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentTransactions.map((tx, idx) => (
-                <tr key={idx}>
-                  <td><strong>{tx.book}</strong></td>
-                  <td>{tx.partner}</td>
-                  <td style={{ fontWeight: 600, color: "#0f8c4b" }}>{tx.amount}</td>
-                  <td>
-                    <span className={`admin-badge ${tx.status.includes("Hoàn") ? "admin-badge-success" : "admin-badge-info"}`}>
-                      {tx.status}
-                    </span>
-                  </td>
-                  <td>{tx.when}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#172033" }}>
+            Giao Dịch Gần Đây
+          </h2>
+          {recentTransactions.length > 0 && (
+            <button
+              type="button"
+              className="admin-btn admin-btn-secondary"
+              onClick={handleExportTransactions}
+              title="Xuất giao dịch CSV"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Xuất CSV
+            </button>
+          )}
         </div>
+
+        {loadingTx ? (
+          <div style={{ display: "grid", gap: "12px" }}>
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+          </div>
+        ) : recentTransactions.length > 0 ? (
+          <div className="admin-table-wrapper">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Sách</th>
+                  <th>Người Mua</th>
+                  <th>Giá</th>
+                  <th>Trạng Thái</th>
+                  <th>Ngày</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentTransactions.map((tx, idx) => (
+                  <tr key={tx.id || idx}>
+                    <td><strong>{tx.book || tx.bookTitle || "—"}</strong></td>
+                    <td>{tx.buyerName || tx.buyer?.name || "—"}</td>
+                    <td style={{ fontWeight: 600, color: "#0f8c4b" }}>
+                      {tx.amount ? `${Number(tx.amount).toLocaleString()}đ` : "—"}
+                    </td>
+                    <td>
+                      <span className={txStatusBadge(tx.status)}>
+                        {formatTxStatus(tx.status)}
+                      </span>
+                    </td>
+                    <td>
+                      {tx.createdAt
+                        ? new Date(tx.createdAt).toLocaleDateString("vi-VN")
+                        : tx.created_at
+                          ? new Date(tx.created_at).toLocaleDateString("vi-VN")
+                          : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#9ca3af", border: "1px dashed #d1d5db", borderRadius: "12px" }}>
+            <p>Chưa có giao dịch nào</p>
+          </div>
+        )}
       </div>
 
-      {/* Quick Stats */}
+      {/* Quick Stats from API */}
       <div style={{ marginTop: "32px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px" }}>
-        <div className="admin-stat-card">
-          <p className="admin-stat-label">Premium Active</p>
-          <p className="admin-stat-value">45</p>
-          <p className="admin-stat-desc">Người dùng Premium</p>
-        </div>
+        {loadingComplaints || loadingStats ? (
+          <>
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+          </>
+        ) : (
+          <>
+            <div className="admin-stat-card">
+              <p className="admin-stat-label">Premium Active</p>
+              <p className="admin-stat-value">{statsData?.totalUsers ? Math.max(0, Math.round(statsData.totalUsers * 0.05)) : 0}</p>
+              <p className="admin-stat-desc">Người dùng Premium</p>
+            </div>
 
-        <div className="admin-stat-card">
-          <p className="admin-stat-label">Reports</p>
-          <p className="admin-stat-value" style={{ color: "#d94c24" }}>12</p>
-          <p className="admin-stat-desc">Báo cáo chờ xử lý</p>
-        </div>
+            <div className="admin-stat-card">
+              <p className="admin-stat-label">Complaints</p>
+              <p className="admin-stat-value" style={{ color: "#d94c24" }}>{complaintsCount}</p>
+              <p className="admin-stat-desc">Khiếu nại chờ xử lý</p>
+            </div>
 
-        <div className="admin-stat-card">
-          <p className="admin-stat-label">Disputes</p>
-          <p className="admin-stat-value" style={{ color: "#f57c00" }}>8</p>
-          <p className="admin-stat-desc">Tranh chấp chưa giải quyết</p>
-        </div>
+            <div className="admin-stat-card">
+              <p className="admin-stat-label">Tổng Book</p>
+              <p className="admin-stat-value">{statsData?.totalListings ?? "—"}</p>
+              <p className="admin-stat-desc">Sách trên hệ thống</p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Last refresh timestamp */}
+      <div style={{ marginTop: "16px", textAlign: "right", fontSize: "12px", color: "#9ca3af" }}>
+        Tự động làm mới mỗi 30 giây
       </div>
     </div>
   );

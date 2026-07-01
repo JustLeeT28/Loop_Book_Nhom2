@@ -441,19 +441,17 @@ export async function getAnalytics(filters = {}) {
 
 export async function getDashboardStats() {
   try {
-    const [users, listings, transactions, disputes, reports] = await Promise.all([
+    const [users, listings, transactions, complaints] = await Promise.all([
       supabase.from('lb_users').select('*', { count: 'exact', head: true }),
       supabase.from('lb_books').select('*', { count: 'exact', head: true }),
       supabase.from('lb_transactions').select('*', { count: 'exact', head: true }),
-      supabase.from('lb_disputes').select('*', { count: 'exact', head: true }),
-      supabase.from('lb_reports').select('*', { count: 'exact', head: true }),
+      supabase.from('lb_complaints').select('*', { count: 'exact', head: true }),
     ]);
     return {
       totalUsers: users.count || 0,
       totalListings: listings.count || 0,
       totalTransactions: transactions.count || 0,
-      totalDisputes: disputes.count || 0,
-      totalReports: reports.count || 0,
+      totalComplaints: complaints.count || 0,
     };
   } catch (err) {
     console.warn('getDashboardStats fallback:', err?.message);
@@ -461,8 +459,7 @@ export async function getDashboardStats() {
       totalUsers: MOCK.users.length,
       totalListings: MOCK.listings.length,
       totalTransactions: MOCK.transactions.length,
-      totalDisputes: 0,
-      totalReports: MOCK.reports.length,
+      totalComplaints: 0,
     };
   }
 }

@@ -107,113 +107,7 @@
 }
 
 /* Fix for zoom < 100% */
-@media (max-width: 1200px) {
-  .admin-main {
-    padding: 24px;
-  }
 
-  .admin-header h1 {
-    font-size: 32px;
-  }
-
-  .admin-nav-label {
-    padding: 12px 16px 8px;
-    font-size: 12px;
-  }
-
-  .admin-nav-link {
-    padding: 10px 16px;
-    font-size: 14px;
-  }
-
-  .admin-table th {
-    padding: 12px;
-    font-size: 12px;
-  }
-
-  .admin-table td {
-    padding: 10px 12px;
-    font-size: 13px;
-  }
-
-  .admin-stat-value {
-    font-size: 32px;
-  }
-
-  .admin-stat-label {
-    font-size: 12px;
-  }
-}
-
-@media (max-width: 960px) {
-  .admin-container {
-    grid-template-columns: 200px 1fr;
-  }
-
-  .admin-sidebar {
-    width: 200px;
-  }
-
-  .admin-main {
-    padding: 20px;
-  }
-
-  .admin-logo {
-    padding: 0 16px 20px;
-    margin-bottom: 16px;
-  }
-
-  .admin-logo h2 {
-    font-size: 16px;
-  }
-
-  .admin-nav-label {
-    padding: 10px 14px 6px;
-    font-size: 11px;
-  }
-
-  .admin-nav-link {
-    padding: 8px 14px;
-    font-size: 13px;
-  }
-
-  .admin-header h1 {
-    font-size: 24px;
-  }
-
-  .admin-btn {
-    padding: 8px 12px;
-    font-size: 12px;
-  }
-
-  .admin-table th {
-    padding: 10px;
-    font-size: 11px;
-  }
-
-  .admin-table td {
-    padding: 8px 10px;
-    font-size: 12px;
-  }
-
-  .admin-stat-card {
-    padding: 16px;
-  }
-
-  .admin-stat-value {
-    font-size: 24px;
-  }
-
-  .admin-stats-grid {
-    gap: 16px;
-  }
-
-  .admin-filter-input,
-  .admin-filter-select {
-    padding: 8px 12px;
-    font-size: 12px;
-  }
-}
 
 @media (max-width: 1200px) {
   .admin-main {
@@ -653,62 +547,6 @@
   align-items: center;
 }
 
-.admin-time-summary {
-  margin: 0 0 24px;
-  background: #ffffff;
-  border: 1px solid rgba(92, 109, 140, 0.14);
-  border-radius: 12px;
-  padding: 12px 16px;
-}
-
-.admin-time-summary-main {
-  margin: 0;
-  color: #24314b;
-  font-size: 13px;
-}
-
-.admin-time-summary-sub {
-  margin: 6px 0 0;
-  color: #63718a;
-  font-size: 12px;
-}
-
-.admin-filter-input,
-.admin-filter-select {
-  padding: 10px 14px;
-  border: 1px solid rgba(92, 109, 140, 0.18);
-  border-radius: 10px;
-  font-size: 14px;
-  color: #172033;
-  background: #fff;
-}
-
-.admin-filter-input.with-search {
-  border: none;
-  padding: 10px 14px 10px 40px;
-  flex: 1;
-  min-width: 0;
-}
-
-.admin-filter-input::placeholder {
-  color: #9a9a9a;
-}
-
-.admin-filter-input.with-search:focus {
-  outline: none;
-}
-
-.admin-filter-search-wrap:has(.admin-filter-input.with-search:focus) {
-  border-color: #0f766e;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
-}
-
-.admin-filter-input:focus,
-.admin-filter-select:focus {
-  outline: none;
-  border-color: #0f766e;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
-}
 
 /* Responsive Filter Bar */
 @media (max-width: 1200px) {
@@ -758,63 +596,6 @@
   }
 }
 
-.admin-time-summary {
-  margin: 0 0 24px;
-  background: #ffffff;
-  border: 1px solid rgba(92, 109, 140, 0.14);
-  border-radius: 12px;
-  padding: 12px 16px;
-}
-
-.admin-time-summary-main {
-  margin: 0;
-  color: #24314b;
-  font-size: 13px;
-}
-
-.admin-time-summary-sub {
-  margin: 6px 0 0;
-  color: #63718a;
-  font-size: 12px;
-}
-
-.admin-filter-input,
-.admin-filter-select {
-  padding: 10px 14px;
-  border: 1px solid rgba(92, 109, 140, 0.18);
-  border-radius: 10px;
-  font-size: 14px;
-  color: #172033;
-  background: #fff;
-}
-
-.admin-filter-input.with-search {
-  border: none;
-  padding: 10px 14px 10px 40px;
-  flex: 1;
-  min-width: 0;
-}
-
-.admin-filter-input::placeholder {
-  color: #9a9a9a;
-}
-
-.admin-filter-input.with-search:focus {
-  outline: none;
-}
-
-.admin-filter-search-wrap:has(.admin-filter-input.with-search:focus) {
-  border-color: #0f766e;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
-}
-
-.admin-filter-input:focus,
-.admin-filter-select:focus {
-  outline: none;
-  border-color: #0f766e;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
-}
-
 /* Badge Styles */
 .admin-badge {
   display: inline-block;
@@ -846,11 +627,10 @@
 }
 
 /* Responsive Badges */
-@media (max-width: 960px) {
-  .admin-badge {
-    padding: 3px 8px;
-    font-size: 11px;
-  }
+/* Table Skeleton shimmer — shared with AdminCharts */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 /* Pagination */
