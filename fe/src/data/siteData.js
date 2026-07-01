@@ -253,40 +253,7 @@ export const metrics = [
   { label: "Số dư ví", value: "2.450.000đ", accent: "dark" },
 ];
 
-export const conversations = [
-  {
-    id: "conv-minh-anh",
-    name: "Nguyễn Minh Anh",
-    bookId: "microeconomics-12",
-    online: true,
-    preview: "Dạ vâng, em chốt giá 120k và gặp ở thư viện nhé.",
-    messages: [
-      { from: "them", text: "Chào bạn, sách Kinh tế vi mô còn không?", time: "09:12" },
-      { from: "me", text: "Còn bạn nhé, sách sạch và đã kiểm định.", time: "09:14" },
-      { from: "them", text: "Mình lấy 1 cuốn, có thể giao ở NEU chiều nay không?", time: "09:16" },
-      { from: "me", text: "Được, mình có mặt ở thư viện từ 3 giờ.", time: "09:18" },
-    ],
-  },
-  {
-    id: "conv-tran-hoang",
-    name: "Trần Hoàng",
-    bookId: "data-structures-java",
-    online: false,
-    preview: "Sách còn mới không bạn ơi?",
-    messages: [
-      { from: "them", text: "Bạn gửi thêm ảnh cạnh gáy sách giúp mình.", time: "Hôm qua" },
-      { from: "me", text: "Mình vừa gửi rồi nhé.", time: "Hôm qua" },
-    ],
-  },
-  {
-    id: "conv-le-thu",
-    name: "Lê Thu",
-    bookId: "business-law",
-    online: false,
-    preview: "Đã gửi một ảnh",
-    messages: [{ from: "them", text: "Nếu lấy hai cuốn mình giảm giá nhé.", time: "Hôm qua" }],
-  },
-];
+export const conversations = [];
 
 export const transactions = {
   current: [

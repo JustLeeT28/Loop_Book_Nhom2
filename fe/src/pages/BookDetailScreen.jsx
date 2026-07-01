@@ -313,12 +313,22 @@ export default function BookDetailScreen() {
                 Trả giá
               </button>
             )}
-            <Link
-              to="/tin-nhan"
-              className="w-full py-3 border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold rounded-lg transition-colors text-sm text-center"
-            >
-              Nhắn tin cho người bán
-            </Link>
+            {(!userData || userData.id !== book.sellerId) && (
+              <Link
+                to="/tin-nhan"
+                state={{
+                  sellerName: book.seller?.name || "Người bán",
+                  sellerId: book.sellerId,
+                  bookId: book.id,
+                  bookTitle: book.title,
+                  bookImage: book.images?.[0] || null,
+                  bookPrice: book.price,
+                }}
+                className="w-full py-3 border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold rounded-lg transition-colors text-sm text-center block"
+              >
+                Nhắn tin cho người bán
+              </Link>
+            )}
           </div>
 
           {/* Hộp trả giá (mở rộng khi bấm) */}
@@ -363,10 +373,10 @@ export default function BookDetailScreen() {
           {/* Hồ sơ người bán — tách biệt rõ ràng khỏi thông tin tác giả */}
           <div className="border border-slate-200 rounded-xl p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors cursor-pointer">
             <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold text-lg flex-shrink-0">
-              {book.sellerName?.charAt(0) || "N"}
+              {book.seller?.name?.charAt(0) || "N"}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-slate-900 text-sm">{book.sellerName || "Người bán"}</p>
+              <p className="font-bold text-slate-900 text-sm">{book.seller?.name || "Người bán"}</p>
               <p className="text-xs text-slate-400 mt-0.5">Xem trang người bán →</p>
             </div>
           </div>
@@ -388,7 +398,7 @@ export default function BookDetailScreen() {
                 ...b,
                 image: b.images?.[0] || "https://placehold.co/300x400?text=No+Image",
                 verified: false,
-                seller: { name: b.sellerName || "Người bán" },
+                seller: { name: b.seller?.name || "Người bán" },
               }} />
             ))}
           </div>
