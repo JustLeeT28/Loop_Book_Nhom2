@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { walletApi } from "../services/walletApi";
 import { transactionApi } from "../services/transactionApi";
 import { formatPrice } from "../utils/formatters";
+import TopUpModal from "../components/wallet/TopUpModal";
+import { depositWallet, checkPayOSPaymentStatus } from "../services/payment";
 
 export default function WalletScreen() {
   const { userData, token } = useAuth();
@@ -11,27 +13,78 @@ export default function WalletScreen() {
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showTopUp, setShowTopUp] = useState(false);
+  const [processingPayOS, setProcessingPayOS] = useState(false);
 
-  useEffect(() => {
-    if (!userData || !token) {
+  const fetchWallet = useCallback(async () => {
+    if (!userData || !token) return;
+    setLoading(true);
+    try {
+      const walletData = await walletApi.getWallet(token);
+      setWallet(walletData);
+
+      const txnData = await transactionApi.getTransactions(token);
+      setTransactions(txnData || []);
+    } catch (err) {
+      console.error("wallet/transaction fetch error:", err.message);
+    } finally {
       setLoading(false);
-      return;
     }
-    const fetchWallet = async () => {
-      try {
-        const walletData = await walletApi.getWallet(token);
-        setWallet(walletData);
+  }, [userData, token]);
 
-        const txnData = await transactionApi.getTransactions(token);
-        setTransactions(txnData || []);
+  // Xử lý callback từ PayOS sau khi thanh toán
+  useEffect(() => {
+    const handlePayOSCallback = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const orderCode = searchParams.get("orderCode") || searchParams.get("order_code");
+      const status = searchParams.get("status") || searchParams.get("code");
+
+      // Kiểm tra pending topup từ localStorage (được lưu trước khi redirect)
+      const pendingRaw = localStorage.getItem("pending_topup");
+      if (!pendingRaw && !orderCode) return;
+
+      setProcessingPayOS(true);
+
+      try {
+        if (pendingRaw) {
+          const pending = JSON.parse(pendingRaw);
+          localStorage.removeItem("pending_topup");
+
+          // Nếu có orderCode trùng khớp, kiểm tra status
+          if (pending.orderCode && (orderCode || status)) {
+            const result = await checkPayOSPaymentStatus(pending.orderCode);
+            if (result.status === "PAID" || result.status === "COMPLETED") {
+              // Payment server (fulfillPayment) đã cập nhật balance + transaction record
+              // Không cần gọi walletApi.topUp() nữa vì sẽ gây trùng (double topup)
+              console.log("[PayOS] Nạp tiền thành công qua PayOS (orderCode:", pending.orderCode, ")");
+            }
+          }
+        } else if (orderCode && token && userData) {
+          // Trường hợp chỉ có orderCode trên URL
+          const result = await checkPayOSPaymentStatus(orderCode);
+          if (result.status === "PAID" || result.status === "COMPLETED") {
+            // Payment server (fulfillPayment) đã cập nhật balance + transaction record
+            console.log("[PayOS] Thanh toán thành công qua PayOS (orderCode:", orderCode, ")");
+          }
+        }
       } catch (err) {
-        console.error("wallet/transaction fetch error:", err.message);
+        console.error("PayOS callback error:", err);
       } finally {
-        setLoading(false);
+        setProcessingPayOS(false);
+        fetchWallet();
+
+        // Clean URL params
+        const cleanUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState(null, "", cleanUrl);
       }
     };
+
+    handlePayOSCallback();
+  }, [userData, token, fetchWallet]);
+
+  useEffect(() => {
     fetchWallet();
-  }, [userData, token]);
+  }, [fetchWallet]);
 
   if (!userData) {
     return (
@@ -64,9 +117,13 @@ export default function WalletScreen() {
           <h1 className="text-2xl font-bold text-slate-900">Ví & Doanh thu</h1>
         </div>
         <div className="flex gap-3">
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg font-semibold text-sm transition-colors">
+          <button
+            onClick={() => setShowTopUp(true)}
+            disabled={processingPayOS}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg font-semibold text-sm transition-colors disabled:opacity-50"
+          >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v14M5 12l7-7 7 7" /></svg>
-            Nạp ví
+            {processingPayOS ? "Đang xử lý..." : "Nạp ví"}
           </button>
         </div>
       </div>
@@ -219,6 +276,26 @@ export default function WalletScreen() {
           </div>
         )}
       </div>
+
+      {/* TopUp Modal */}
+      <TopUpModal
+        isOpen={showTopUp}
+        onClose={() => setShowTopUp(false)}
+        onSuccess={(depositedAmount) => {
+          fetchWallet();
+        }}
+      />
+
+      {/* PayOS processing overlay */}
+      {processingPayOS && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-2xl">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-700 mx-auto mb-4" />
+            <p className="font-semibold text-slate-800 mb-1">Đang xác nhận thanh toán</p>
+            <p className="text-sm text-slate-400">Vui lòng chờ trong giây lát...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

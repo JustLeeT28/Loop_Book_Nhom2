@@ -36,8 +36,9 @@ public class TransactionService {
     }
 
     /**
-     * Xử lý chuyển tiền từ ví người mua sang ví người bán nếu phương thức thanh toán là "wallet".
-     * Trừ tiền người mua, cộng tiền vào ví người bán, cập nhật trạng thái giao dịch.
+     * Xử lý thanh toán bằng ví: Giữ tiền trong hệ thống (escrow) thay vì chuyển ngay cho người bán.
+     * Tiền sẽ được giữ ở held_balance của người mua và chỉ chuyển cho người bán
+     * khi người mua xác nhận đã nhận được sách.
      */
     @Transactional
     public Transaction processWalletPayment(Transaction transaction) {
@@ -47,25 +48,21 @@ public class TransactionService {
 
         int amount = Integer.parseInt(transaction.getAmount());
 
-        // 1. Trừ tiền từ ví người mua
-        walletService.deduct(transaction.getBuyerId(), amount);
+        // 1. Giữ tiền từ ví người mua (trừ available balance, thêm vào held_balance)
+        walletService.holdMoney(transaction.getBuyerId(), amount);
 
         // 2. Tính netAmount (tạm thời chưa tính phí, fee = 0)
         int netAmount = amount;
 
-        // 3. Cộng tiền vào ví người bán
-        walletService.topUp(transaction.getSellerId(), netAmount);
-
-        // 4. Cập nhật trạng thái transaction
-        transaction.setStatus("completed");
-        transaction.setIsCompleted(true);
-        transaction.setCompletedAt(LocalDateTime.now());
+        // 3. Cập nhật trạng thái transaction -> "pending" (chờ người mua xác nhận)
+        transaction.setStatus("pending");
+        transaction.setIsCompleted(false);
         transaction.setNetAmount(netAmount);
         transaction.setFeeAmount(0);
 
         Transaction saved = transactionRepository.save(transaction);
 
-        // 5. Đánh dấu sách đã bán để ẩn khỏi danh sách công khai
+        // 4. Đánh dấu sách đã bán để ẩn khỏi danh sách công khai
         try {
             Book book = bookRepository.findById(transaction.getBookId()).orElse(null);
             if (book != null) {
@@ -76,7 +73,6 @@ public class TransactionService {
             }
         } catch (Exception e) {
             // Không throw lỗi nếu không update được book (transaction vẫn thành công)
-            // Logger would be better here
         }
 
         return saved;
@@ -111,6 +107,24 @@ public class TransactionService {
             String id) {
 
         Transaction transaction = getById(id);
+
+        // Chỉ cho phép xác nhận giao dịch đang ở trạng thái "pending" (đang giữ tiền)
+        if (!"pending".equals(transaction.getStatus())) {
+            throw new RuntimeException(
+                    "Transaction can only be confirmed when status is 'pending'");
+        }
+
+        int netAmount = transaction.getNetAmount();
+
+        // Giải phóng tiền từ held_balance của người mua sang available balance của người bán
+        walletService.releaseHeldMoneyToSeller(
+                transaction.getSellerId(),
+                netAmount);
+
+        // Giảm held_balance của người mua (tiền đã chuyển cho người bán)
+        walletService.releaseHeldMoneyToBuyer(
+                transaction.getBuyerId(),
+                netAmount);
 
         transaction.setStatus("completed");
         transaction.setIsCompleted(true);
@@ -153,25 +167,55 @@ public class TransactionService {
                     "Transaction already refunded");
         }
 
-        if (!Boolean.TRUE.equals(
-                transaction.getIsCompleted())) {
+        int amount = transaction.getNetAmount();
 
+        if ("pending".equals(transaction.getStatus())) {
+            // Giao dịch đang ở trạng thái chờ xác nhận - tiền đang ở held_balance của người mua
+            // Hoàn lại held_balance về available balance cho người mua
+            walletService.releaseHeldMoneyToBuyer(
+                    transaction.getBuyerId(),
+                    amount);
+
+            // Đánh dấu lại sách là chưa bán
+            try {
+                Book book = bookRepository.findById(transaction.getBookId()).orElse(null);
+                if (book != null) {
+                    book.setIsSold(false);
+                    book.setStatus("active");
+                    book.setSoldAt(null);
+                    bookRepository.save(book);
+                }
+            } catch (Exception e) {
+                // Không throw lỗi
+            }
+        } else if (Boolean.TRUE.equals(transaction.getIsCompleted())) {
+            // Giao dịch đã hoàn tất - tiền đã ở ví người bán
+            // trừ tiền người bán
+            walletService.deduct(
+                    transaction.getSellerId(),
+                    amount);
+
+            // hoàn tiền người mua
+            walletService.topUp(
+                    transaction.getBuyerId(),
+                    amount);
+
+            // Đánh dấu lại sách là chưa bán
+            try {
+                Book book = bookRepository.findById(transaction.getBookId()).orElse(null);
+                if (book != null) {
+                    book.setIsSold(false);
+                    book.setStatus("active");
+                    book.setSoldAt(null);
+                    bookRepository.save(book);
+                }
+            } catch (Exception e) {
+                // Không throw lỗi
+            }
+        } else {
             throw new RuntimeException(
-                    "Transaction not completed");
+                    "Transaction cannot be refunded in current status: " + transaction.getStatus());
         }
-
-        int amount =
-                transaction.getNetAmount();
-
-        // trừ tiền người bán
-        walletService.deduct(
-                transaction.getSellerId(),
-                amount);
-
-        // hoàn tiền người mua
-        walletService.topUp(
-                transaction.getBuyerId(),
-                amount);
 
         transaction.setStatus("refunded");
 

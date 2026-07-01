@@ -48,6 +48,21 @@ export const transactionApi = {
     return await response.json();
   },
 
+  async confirmTransaction(id, authToken) {
+    const response = await fetch(`${API_URL}/transactions/${id}/confirm`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
+    if (!response.ok) {
+      let message = 'Failed to confirm transaction';
+      try { const error = await response.json(); message = error.error || message; } catch (_) {}
+      throw new Error(message);
+    }
+    return await response.json();
+  },
+
   async submitComplaint(complaintData, authToken) {
     const response = await fetch(`${API_URL}/complaints`, {
       method: 'POST',

@@ -1,26 +1,8 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import { getDashboardStats, getAnalytics, getComplaints } from "../../services/admin";
+import { getDashboardStats, getAnalytics, getCategoryDistribution, getComplaints } from "../../services/admin";
 import { transactionApi } from "../../services/transactionApi";
 import { supabase } from "../../services/supabase";
 import { RevenueChart, CategoryDistributionChart, UserGrowthChart, StatsCardSkeleton } from "./AdminCharts";
-
-const CATEGORY_LABELS = {
-  economics: "Kinh Tế",
-  law: "Luật",
-  engineering: "Kỹ Thuật",
-  language: "Ngoại Ngữ",
-  agriculture: "Nông Nghiệp",
-  sociology: "Xã Hội Học",
-};
-
-const CATEGORY_COLORS = {
-  economics: "#0f766e",
-  law: "#14b8a6",
-  engineering: "#a78bfa",
-  language: "#06b6d4",
-  agriculture: "#059669",
-  sociology: "#64748b",
-};
 
 function parseDate(dateString) {
   return new Date(`${dateString}T00:00:00`);
@@ -283,27 +265,34 @@ export default function AdminDashboard() {
   }, [filteredAnalytics]);
 
   // Category distribution: extract from analytics items
-  const categoryChartData = useMemo(() => {
-    if (!analyticsData.length) return [];
-    const catMap = new Map();
-    analyticsData.forEach((item) => {
-      const cat = item.category || item.metric_type || "other";
-      const current = catMap.get(cat) || 0;
-      catMap.set(cat, current + (item.listings || item.total_listings || 1));
-    });
-    return [...catMap.entries()].map(([key, value]) => ({
-      name: CATEGORY_LABELS[key] || key,
-      value,
-      color: CATEGORY_COLORS[key] || "#0f69ff",
-    }));
-  }, [analyticsData]);
+  const [categoryDistData, setCategoryDistData] = useState([]);
+  const [loadingCategoryDist, setLoadingCategoryDist] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCategoryDist(true);
+    getCategoryDistribution()
+      .then((data) => {
+        if (!cancelled) setCategoryDistData(data || []);
+      })
+      .catch(() => {
+        if (!cancelled) setCategoryDistData([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCategoryDist(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const categoryChartData = categoryDistData;
+  const categoryLoading = loadingCategoryDist || loadingAnalytics;
 
   // User growth chart
   const userGrowthChartData = useMemo(() => {
     if (!filteredAnalytics.length) return [];
     return filteredAnalytics.map((item) => ({
       label: item.date ? item.date.slice(5, 10) : "?",
-      users: item.users || item.total_users || item.new_users || 0,
+      users: typeof item.users === 'number' ? item.users : (item.total_users || 0),
     }));
   }, [filteredAnalytics]);
 
@@ -504,7 +493,7 @@ export default function AdminDashboard() {
             />
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px", marginBottom: "24px" }}>
-              <CategoryDistributionChart data={categoryChartData} loading={false} />
+              <CategoryDistributionChart data={categoryChartData} loading={categoryLoading} />
               <UserGrowthChart
                 data={userGrowthChartData}
                 loading={false}

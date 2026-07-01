@@ -419,46 +419,202 @@ export async function updateReportStatus(reportId, status, actionTaken, handledB
 }
 
 // ============================================================================
-// ANALYTICS
+// ANALYTICS - Tổng hợp dữ liệu từ các bảng có sẵn (lb_transactions, lb_users, lb_books)
 // ============================================================================
 
+function extractDate(isoString) {
+  if (!isoString) return null;
+  return isoString.split('T')[0] || isoString.split(' ')[0];
+}
+
+/**
+ * Gom nhóm dữ liệu giao dịch, users, books theo ngày để phục vụ biểu đồ
+ */
 export async function getAnalytics(filters = {}) {
   try {
-    let query = supabase.from('lb_analytics').select('*');
-    if (filters.startDate && filters.endDate) {
-      query = query.gte('date', filters.startDate).lte('date', filters.endDate);
+    // Lấy giao dịch
+    let txQuery = supabase
+      .from('lb_transactions')
+      .select('created_at, amount, fee_amount, status');
+    if (filters.startDate) txQuery = txQuery.gte('created_at', filters.startDate);
+    if (filters.endDate) {
+      txQuery = txQuery.lte('created_at', filters.endDate + 'T23:59:59');
     }
-    if (filters.metricType) query = query.eq('metric_type', filters.metricType);
-    const { data, error } = await query.order('date', { ascending: false });
-    if (error) throw error;
-    // Normalize: map category -> metric_type for backward compat
-    return (data || []).map(a => ({ ...a, category: a.metric_type }));
+    const txResult = await txQuery;
+    if (txResult.error) throw txResult.error;
+
+    // Lấy users
+    let userQuery = supabase
+      .from('lb_users')
+      .select('created_at');
+    if (filters.startDate) userQuery = userQuery.gte('created_at', filters.startDate);
+    if (filters.endDate) userQuery = userQuery.lte('created_at', filters.endDate + 'T23:59:59');
+    const userResult = await userQuery;
+    if (userResult.error) throw userResult.error;
+
+    // Lấy books
+    let bookQuery = supabase
+      .from('lb_books')
+      .select('created_at, category');
+    if (filters.startDate) bookQuery = bookQuery.gte('created_at', filters.startDate);
+    if (filters.endDate) bookQuery = bookQuery.lte('created_at', filters.endDate + 'T23:59:59');
+    const bookResult = await bookQuery;
+    if (bookResult.error) throw bookResult.error;
+
+    const transactions = txResult.data || [];
+    const users = userResult.data || [];
+    const books = bookResult.data || [];
+
+    // Gom nhóm giao dịch theo ngày
+    const txByDate = {};
+    transactions.forEach(tx => {
+      const d = extractDate(tx.created_at);
+      if (!d) return;
+      if (!txByDate[d]) txByDate[d] = { count: 0, revenue: 0, fee: 0, completed: 0 };
+      txByDate[d].count += 1;
+      txByDate[d].revenue += Number(tx.amount) || 0;
+      txByDate[d].fee += Number(tx.fee_amount) || 0;
+      if (tx.status === 'completed') txByDate[d].completed += 1;
+    });
+
+    // Users theo ngày
+    const usersByDate = {};
+    users.forEach(u => {
+      const d = extractDate(u.created_at);
+      if (d) usersByDate[d] = (usersByDate[d] || 0) + 1;
+    });
+
+    // Books theo ngày
+    const booksByDate = {};
+    books.forEach(b => {
+      const d = extractDate(b.created_at);
+      if (d) booksByDate[d] = (booksByDate[d] || 0) + 1;
+    });
+
+    // Tổng hợp tất cả các ngày
+    const allKeys = [...new Set([
+      ...Object.keys(txByDate),
+      ...Object.keys(usersByDate),
+      ...Object.keys(booksByDate),
+    ])].sort();
+
+    let cumUsers = 0;
+    let cumBooks = 0;
+
+    const result = allKeys.map(dateKey => {
+      cumUsers += usersByDate[dateKey] || 0;
+      cumBooks += booksByDate[dateKey] || 0;
+      const dayTx = txByDate[dateKey] || { count: 0, revenue: 0, fee: 0, completed: 0 };
+      return {
+        id: `analytics-${dateKey}`,
+        date: dateKey,
+        metric_type: 'overview',
+        total_users: cumUsers,
+        total_listings: cumBooks,
+        total_transactions: dayTx.count,
+        completed_transactions: dayTx.completed,
+        total_revenue: dayTx.revenue,
+        platform_fee: dayTx.fee,
+        users: usersByDate[dateKey] || 0,
+        listings: booksByDate[dateKey] || 0,
+        revenue: dayTx.revenue,
+      };
+    });
+
+    return result;
   } catch (err) {
-    console.warn('getAnalytics fallback:', err?.message);
-    return [...MOCK.analytics];
+    console.warn('getAnalytics error:', err?.message);
+    return [];
+  }
+}
+
+/**
+ * Lấy số lượng sách phân bố theo từng danh mục
+ * Trả về mảng [{ name: 'Kinh tế', value: 5, color: '...' }, ...]
+ */
+export async function getCategoryDistribution() {
+  try {
+    // Lấy tất cả categories
+    const { data: categories, error: catError } = await supabase
+      .from('lb_categories')
+      .select('id, name, accent');
+    if (catError) throw catError;
+
+    // Lấy tất cả books với category id
+    const { data: books, error: bookError } = await supabase
+      .from('lb_books')
+      .select('category');
+    if (bookError) throw bookError;
+
+    // Đếm số lượng sách theo từng category
+    const bookCountByCat = {};
+    (books || []).forEach(b => {
+      const catId = b.category;
+      if (catId) {
+        bookCountByCat[catId] = (bookCountByCat[catId] || 0) + 1;
+      }
+    });
+
+    // Map category id -> name với màu sắc
+    const colorPalette = [
+      '#0f766e', '#14b8a6', '#a78bfa', '#06b6d4', '#059669',
+      '#64748b', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
+    ];
+
+    return (categories || []).map((cat, index) => ({
+      name: cat.name,
+      value: bookCountByCat[cat.id] || 0,
+      color: cat.accent
+        ? { blue: '#0f766e', green: '#14b8a6', purple: '#a78bfa', teal: '#06b6d4', emerald: '#059669', slate: '#64748b' }[cat.accent] || colorPalette[index % colorPalette.length]
+        : colorPalette[index % colorPalette.length],
+    })).filter(item => item.value > 0);
+  } catch (err) {
+    console.warn('getCategoryDistribution fallback:', err?.message);
+    // Fallback: đếm từ mock data
+    const catMap = {};
+    MOCK.listings.forEach(b => {
+      const catName = b.category?.name || 'Khác';
+      catMap[catName] = (catMap[catName] || 0) + 1;
+    });
+    const colorPalette = [
+      '#0f766e', '#14b8a6', '#a78bfa', '#06b6d4', '#059669',
+      '#64748b', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
+    ];
+    return Object.entries(catMap).map(([name, value], index) => ({
+      name,
+      value,
+      color: colorPalette[index % colorPalette.length],
+    }));
   }
 }
 
 export async function getDashboardStats() {
   try {
-    const [users, listings, transactions, complaints] = await Promise.all([
+    const [users, listings, transactions, allTx] = await Promise.all([
       supabase.from('lb_users').select('*', { count: 'exact', head: true }),
       supabase.from('lb_books').select('*', { count: 'exact', head: true }),
       supabase.from('lb_transactions').select('*', { count: 'exact', head: true }),
-      supabase.from('lb_complaints').select('*', { count: 'exact', head: true }),
+      supabase.from('lb_transactions').select('amount'),
     ]);
+    // Tính tổng doanh thu
+    let totalRevenue = 0;
+    if (allTx.data) {
+      allTx.data.forEach(tx => { totalRevenue += Number(tx.amount) || 0; });
+    }
     return {
       totalUsers: users.count || 0,
       totalListings: listings.count || 0,
       totalTransactions: transactions.count || 0,
-      totalComplaints: complaints.count || 0,
+      totalRevenue,
+      totalComplaints: 0,
     };
   } catch (err) {
-    console.warn('getDashboardStats fallback:', err?.message);
+    console.warn('getDashboardStats error:', err?.message);
     return {
-      totalUsers: MOCK.users.length,
-      totalListings: MOCK.listings.length,
-      totalTransactions: MOCK.transactions.length,
+      totalUsers: 0,
+      totalListings: 0,
+      totalTransactions: 0,
+      totalRevenue: 0,
       totalComplaints: 0,
     };
   }
@@ -724,7 +880,7 @@ export default {
   getCategories, getCategoryById, createCategory, updateCategory, deleteCategory,
   getDisputes, updateDisputeStatus,
   getReports, updateReportStatus,
-  getAnalytics, getDashboardStats,
+  getAnalytics, getCategoryDistribution, getDashboardStats,
   getSetting, getAllSettings, updateSetting,
   getComplaints, updateComplaintStatus,
   getPromotions,

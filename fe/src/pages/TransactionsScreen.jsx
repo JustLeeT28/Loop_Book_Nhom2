@@ -4,9 +4,10 @@ import { transactionApi } from "../services/transactionApi";
 import { formatPrice } from "../utils/formatters";
 
 const statusConfig = {
-  "pending": { label: "Chờ gặp mặt", color: "bg-yellow-100 text-yellow-700" },
+  "pending": { label: "Chờ xác nhận", color: "bg-yellow-100 text-yellow-700" },
   "confirmed": { label: "Xác nhận TT", color: "bg-blue-100 text-blue-700" },
   "completed": { label: "Hoàn tất", color: "bg-green-100 text-green-700" },
+  "refunded": { label: "Đã hoàn tiền", color: "bg-red-100 text-red-700" },
 };
 
 const DEFAULT_STATUS = { label: "Khác", color: "bg-slate-100 text-slate-600" };
@@ -18,8 +19,26 @@ const TABS = [
   { id: "service", label: "Gói dịch vụ" },
 ];
 
-function TransactionCard({ item, isCompleted }) {
+function TransactionCard({ item, isCompleted, isBuyer, onConfirm }) {
   const status = statusConfig[item.status] || DEFAULT_STATUS;
+  const [confirming, setConfirming] = useState(false);
+
+  const handleConfirm = async () => {
+    if (confirming) return;
+    if (!window.confirm("Bạn đã chắc chắn nhận được sách? Sau khi xác nhận, tiền sẽ được chuyển cho người bán.")) return;
+    setConfirming(true);
+    try {
+      await onConfirm(item.id);
+    } catch (err) {
+      alert("Xác nhận thất bại: " + err.message);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  // Hiển thị nút xác nhận nếu người mua và trạng thái là "pending"
+  const showConfirmButton = isBuyer && item.status === "pending";
+
   return (
     <div className="flex items-start gap-4 px-5 py-4 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
       <div className="w-10 h-10 rounded-full bg-teal-100 text-teal-700 font-bold flex items-center justify-center text-sm flex-shrink-0">
@@ -38,9 +57,13 @@ function TransactionCard({ item, isCompleted }) {
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <span className={`font-bold text-sm ${isCompleted ? "text-green-600" : "text-slate-900"}`}>{item.amount}</span>
         <div className="flex gap-2">
-          {!isCompleted && (
-            <button className="text-xs text-teal-700 border border-teal-700 px-2 py-0.5 rounded-full font-semibold hover:bg-teal-50 transition-colors">
-              Xem chi tiết
+          {showConfirmButton && (
+            <button
+              onClick={handleConfirm}
+              disabled={confirming}
+              className="text-xs text-teal-700 border border-teal-700 px-2 py-0.5 rounded-full font-semibold hover:bg-teal-50 transition-colors disabled:opacity-50"
+            >
+              {confirming ? "Đang xử lý..." : "Đã nhận sách ✓"}
             </button>
           )}
           <button 
@@ -328,7 +351,21 @@ export default function TransactionsScreen() {
               item.isBoost || item.isPackage ? (
                 <ServiceCard key={item.id} item={item} />
               ) : (
-                <TransactionCard key={item.id} item={item} isCompleted={item.isCompleted} />
+                <TransactionCard
+                  key={item.id}
+                  item={item}
+                  isCompleted={item.isCompleted}
+                  isBuyer={item.role === "buy"}
+                  onConfirm={async (id) => {
+                    await transactionApi.confirmTransaction(id, token);
+                    setAllTransactions(prev => prev.map(t => {
+                      if (t.id === id) {
+                        return { ...t, status: "completed", isCompleted: true };
+                      }
+                      return t;
+                    }));
+                  }}
+                />
               )
             )
           )}

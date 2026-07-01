@@ -5,7 +5,7 @@ import { formatPrice } from "../utils/formatters";
 import { useAuth } from "../contexts/AuthContext";
 
 const statusConfig = {
-  pending: { label: "Chờ xử lý", color: "bg-yellow-100 text-yellow-700" },
+  pending: { label: "Chờ xác nhận", color: "bg-yellow-100 text-yellow-700" },
   confirmed: { label: "Đã xác nhận", color: "bg-blue-100 text-blue-700" },
   awaiting_meet: { label: "Chờ gặp mặt", color: "bg-purple-100 text-purple-700" },
   completed: { label: "Hoàn tất", color: "bg-green-100 text-green-700" },
@@ -22,6 +22,7 @@ export default function TransactionSuccessScreen() {
   const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     const fetchTransaction = async () => {
@@ -62,6 +63,26 @@ export default function TransactionSuccessScreen() {
   }
 
   const status = statusConfig[transaction.status] || { label: transaction.status, color: "bg-slate-100 text-slate-600" };
+
+  // Xác định xem người dùng hiện tại có phải là người mua không
+  const isBuyer = userData?.id && String(transaction.buyerId) === String(userData.id);
+  // Chỉ hiển thị nút xác nhận khi giao dịch đang ở trạng thái "pending" và người dùng là người mua
+  const canConfirm = isBuyer && transaction.status === "pending";
+
+  const handleConfirmReceipt = async () => {
+    if (!confirming && window.confirm("Bạn đã chắc chắn nhận được sách? Sau khi xác nhận, tiền sẽ được chuyển cho người bán.")) {
+      setConfirming(true);
+      try {
+        const updated = await transactionApi.confirmTransaction(id, token);
+        setTransaction(updated);
+        alert("Xác nhận thành công! Tiền đã được chuyển cho người bán.");
+      } catch (err) {
+        alert("Xác nhận thất bại: " + err.message);
+      } finally {
+        setConfirming(false);
+      }
+    }
+  };
 
   return (
     <div className="max-w-lg mx-auto py-12">
@@ -104,6 +125,15 @@ export default function TransactionSuccessScreen() {
       </div>
 
       <div className="flex flex-col gap-3">
+        {canConfirm && (
+          <button
+            onClick={handleConfirmReceipt}
+            disabled={confirming}
+            className="w-full py-3 text-center text-sm font-bold rounded-lg transition-all bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {confirming ? "Đang xác nhận..." : "Xác nhận đã nhận sách ✓"}
+          </button>
+        )}
         <Link
           to="/giao-dich"
           className="w-full vinted-btn-primary py-3 text-center text-sm font-bold"

@@ -27,6 +27,9 @@ public class Wallet {
     @Column(nullable = false)
     private Integer balance = 0;
 
+    @Column(name = "held_balance", nullable = false)
+    private Integer heldBalance = 0;
+
     @Column(name = "total_in", nullable = false)
     private Integer totalIn = 0;
 
@@ -53,6 +56,9 @@ public class Wallet {
 
     public Integer getBalance() { return balance; }
     public void setBalance(Integer balance) { this.balance = balance; }
+
+    public Integer getHeldBalance() { return heldBalance; }
+    public void setHeldBalance(Integer heldBalance) { this.heldBalance = heldBalance; }
 
     public Integer getTotalIn() { return totalIn; }
     public void setTotalIn(Integer totalIn) { this.totalIn = totalIn; }

@@ -142,11 +142,26 @@ public class TransactionController {
 
     @PostMapping("/{id}/confirm")
     public ResponseEntity<?> confirm(
-            @PathVariable String id) {
+            @PathVariable String id,
+            @RequestHeader("Authorization") String authHeader) {
 
-        return ResponseEntity.ok(
-                transactionService
-                        .confirmTransaction(id));
+        try {
+            UUID userId = jwtUtils.extractUserIdFromToken(authHeader);
+
+            Transaction transaction = transactionService.getById(id);
+
+            // Chỉ người mua mới có quyền xác nhận đã nhận sách
+            if (!userId.equals(transaction.getBuyerId())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Chỉ người mua mới có thể xác nhận giao dịch"));
+            }
+
+            return ResponseEntity.ok(
+                    transactionService.confirmTransaction(id));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 
     @PostMapping("/{id}/refund")
