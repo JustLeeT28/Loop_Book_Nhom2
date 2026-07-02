@@ -26,21 +26,6 @@ export default function AdminSettings() {
           </div>
         </div>
 
-        {/* Premium Settings */}
-        <div style={{ background: "#fff", padding: "24px", borderRadius: "12px", marginBottom: "24px" }}>
-          <h2 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700 }}>Cấu Hình Premium</h2>
-          
-          <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", marginBottom: "8px", fontWeight: 600 }}>Giá "Nhân Bản Gấp" (VNĐ)</label>
-            <input type="number" defaultValue="10000" className="admin-filter-input" style={{ width: "100%" }} />
-          </div>
-
-          <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", marginBottom: "8px", fontWeight: 600 }}>Giá "Combo 14 Ngày" (VNĐ)</label>
-            <input type="number" defaultValue="39000" className="admin-filter-input" style={{ width: "100%" }} />
-          </div>
-        </div>
-
         {/* Save Button */}
         <div style={{ marginTop: "24px", display: "flex", gap: "12px" }}>
           <button className="admin-btn admin-btn-primary">Lưu Cài Đặt</button>

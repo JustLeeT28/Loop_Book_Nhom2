@@ -816,6 +816,187 @@ export async function getPromotions(filters = {}, page = 1, perPage = 20) {
 }
 
 // ============================================================================
+// PREMIUM MANAGEMENT
+// ============================================================================
+
+const MOCK_PREMIUM_PLANS = [
+  { id: 'urgent', name: 'Nhân Bản Gấp', price: 10000, summary: 'Đẩy listing lên đầu 3 ngày' },
+  { id: 'boost', name: 'Đầu Tin Trăng Đầu', price: 25000, summary: 'Đẩy listing lên đầu 7 ngày' },
+  { id: 'combo', name: 'Combo 14 Ngày', price: 39000, summary: 'Đẩy listing 14 ngày + gắn nhãn ưu tiên' },
+];
+
+const MOCK_PREMIUM_USERS = [
+  { id: 'p1', user_id: 'u1', plan_type: 'urgent', amount_paid: 10000, starts_at: '2024-03-20', expires_at: '2024-04-15', is_active: true, user_name: 'Hoàng Yến', plan_name: 'Nhân Bản Gấp', plan_price: 10000 },
+  { id: 'p2', user_id: 'u2', plan_type: 'combo', amount_paid: 39000, starts_at: '2024-03-30', expires_at: '2024-04-20', is_active: true, user_name: 'Nguyễn Minh Anh', plan_name: 'Combo 14 Ngày', plan_price: 39000 },
+  { id: 'p3', user_id: 'u3', plan_type: 'urgent', amount_paid: 10000, starts_at: '2024-03-25', expires_at: '2024-04-10', is_active: true, user_name: 'Phạm Hải', plan_name: 'Nhân Bản Gấp', plan_price: 10000 },
+  { id: 'p4', user_id: 'u9', plan_type: 'boost', amount_paid: 25000, starts_at: '2024-03-15', expires_at: '2024-04-05', is_active: false, user_name: 'Trần Hoàng', plan_name: 'Đầu Tin Trăng Đầu', plan_price: 25000 },
+];
+
+const PLAN_TYPE_TO_NAME = { urgent: 'Nhân Bản Gấp', boost: 'Đầu Tin Trăng Đầu', combo: 'Combo 14 Ngày' };
+const PLAN_TYPE_TO_PRICE = { urgent: 10000, boost: 25000, combo: 39000 };
+
+/**
+ * Lấy danh sách gói premium
+ */
+export async function getPremiumPlans() {
+  try {
+    const { data, error } = await supabase.from('lb_premium_plans').select('*');
+    if (error) throw error;
+    if (data && data.length > 0) return data;
+    return [...MOCK_PREMIUM_PLANS];
+  } catch (err) {
+    console.warn('getPremiumPlans fallback:', err?.message);
+    return [...MOCK_PREMIUM_PLANS];
+  }
+}
+
+/**
+ * Lấy danh sách người dùng premium (đã mua gói)
+ * Mỗi user có thể có nhiều giao dịch premium
+ * Trả về: { data: [...], total, revenue, activeCount }
+ */
+export async function getPremiumUsers(page = 1, perPage = 20) {
+  try {
+    // Query từ lb_listing_promotions (dùng để lưu các giao dịch mua gói)
+    let query = supabase
+      .from('lb_listing_promotions')
+      .select('*, user:user_id!inner(id, name)', { count: 'exact' })
+      .order('created_at', { ascending: false });
+
+    const from = (page - 1) * perPage;
+    const to = from + perPage - 1;
+    const { data, error, count } = await query.range(from, to);
+    if (error) throw error;
+
+    const now = new Date().toISOString();
+    const enriched = (data || []).map(p => {
+      const name = p.plan_type ? (PLAN_TYPE_TO_NAME[p.plan_type] || p.plan_type) : '—';
+      const price = p.plan_type ? (PLAN_TYPE_TO_PRICE[p.plan_type] || p.amount_paid) : (p.amount_paid || 0);
+      const expiresAt = p.expires_at;
+      let status = 'Đã Hết Hạn';
+      if (p.is_active && expiresAt) {
+        const diffDays = Math.ceil((new Date(expiresAt) - new Date()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 3) status = 'Hoạt Động';
+        else if (diffDays > 0) status = 'Sắp Hết Hạn';
+        else status = 'Đã Hết Hạn';
+      }
+      return {
+        id: p.id,
+        user_id: p.user_id,
+        user_name: p.user?.name || '—',
+        plan_type: p.plan_type,
+        plan_name: name,
+        price: price,
+        amount_paid: p.amount_paid || 0,
+        starts_at: p.created_at?.split('T')[0] || p.starts_at || '—',
+        expires_at: p.expires_at?.split('T')[0] || '—',
+        is_active: p.is_active,
+        status,
+      };
+    });
+
+    // Tính tổng doanh thu
+    const totalRevenue = enriched.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
+    const activeCount = enriched.filter(p => p.is_active).length;
+
+    return { data: enriched, total: count || enriched.length, page, perPage, totalRevenue, activeCount };
+  } catch (err) {
+    console.warn('getPremiumUsers fallback:', err?.message);
+    let mock = [...MOCK_PREMIUM_USERS];
+    // Tính status cho mock
+    const now = new Date();
+    mock = mock.map(p => {
+      const expires = new Date(p.expires_at);
+      let status = 'Đã Hết Hạn';
+      if (p.is_active && expires > now) {
+        const diffDays = Math.ceil((expires - now) / (1000 * 60 * 60 * 24));
+        if (diffDays > 3) status = 'Hoạt Động';
+        else status = 'Sắp Hết Hạn';
+      }
+      return { ...p, status };
+    });
+    const from = (page - 1) * perPage;
+    const to = from + perPage - 1;
+    const paginated = mock.slice(from, to);
+    const totalRevenue = mock.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
+    const activeCount = mock.filter(p => p.is_active).length;
+    return { data: paginated, total: mock.length, page, perPage, totalRevenue, activeCount };
+  }
+}
+
+/**
+ * Lấy tổng doanh thu từ premium
+ */
+export async function getPremiumRevenue() {
+  try {
+    const result = await getPremiumUsers(1, 10000);
+    return result.totalRevenue || 0;
+  } catch (err) {
+    console.warn('getPremiumRevenue fallback:', err?.message);
+    return MOCK_PREMIUM_USERS.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
+  }
+}
+
+/**
+ * Lấy số lượng premium active
+ */
+export async function getPremiumActiveCount() {
+  try {
+    const { count, error } = await supabase
+      .from('lb_listing_promotions')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+    if (error) throw error;
+    return count || 0;
+  } catch (err) {
+    console.warn('getPremiumActiveCount fallback:', err?.message);
+    return MOCK_PREMIUM_USERS.filter(p => p.is_active).length;
+  }
+}
+
+/**
+ * Tạo / cập nhật gói premium mới
+ */
+export async function createPremiumPlan(planData) {
+  try {
+    const { data, error } = await supabase.from('lb_premium_plans').insert([planData]).select();
+    if (error) throw error;
+    return data[0];
+  } catch (err) {
+    console.warn('createPremiumPlan fallback:', err?.message);
+    const newPlan = { id: 'plan_' + Date.now(), ...planData };
+    MOCK_PREMIUM_PLANS.push(newPlan);
+    return newPlan;
+  }
+}
+
+export async function updatePremiumPlan(id, updates) {
+  try {
+    const { data, error } = await supabase.from('lb_premium_plans').update(updates).eq('id', id).select();
+    if (error) throw error;
+    return data[0];
+  } catch (err) {
+    console.warn('updatePremiumPlan fallback:', err?.message);
+    const plan = MOCK_PREMIUM_PLANS.find(p => p.id === id);
+    if (plan) { Object.assign(plan, updates); return plan; }
+    throw err;
+  }
+}
+
+export async function deletePremiumPlan(id) {
+  try {
+    const { error } = await supabase.from('lb_premium_plans').delete().eq('id', id);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.warn('deletePremiumPlan fallback:', err?.message);
+    const idx = MOCK_PREMIUM_PLANS.findIndex(p => p.id === id);
+    if (idx > -1) { MOCK_PREMIUM_PLANS.splice(idx, 1); return true; }
+    throw err;
+  }
+}
+
+// ============================================================================
 // FEE CONFIG
 // ============================================================================
 

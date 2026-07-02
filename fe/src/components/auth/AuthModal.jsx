@@ -26,11 +26,36 @@ export default function AuthModal() {
 
     try {
       if (authModalMode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (error) throw error;
+
+        // Kiểm tra trạng thái tài khoản trong lb_users
+        if (signInData?.user) {
+          const { data: userProfile, error: profileError } = await supabase
+            .from('lb_users')
+            .select('status')
+            .eq('id', signInData.user.id)
+            .single();
+
+          if (!profileError && userProfile) {
+            if (userProfile.status === 'suspended') {
+              // Tài khoản đã bị khóa - đăng xuất và báo lỗi
+              await supabase.auth.signOut();
+              setError("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.");
+              setLoading(false);
+              return;
+            }
+            if (userProfile.status === 'inactive') {
+              await supabase.auth.signOut();
+              setError("Tài khoản của bạn chưa được kích hoạt. Vui lòng liên hệ quản trị viên.");
+              setLoading(false);
+              return;
+            }
+          }
+        }
 
         showToast("Đăng nhập thành công!", "success");
         closeAuthModal();
@@ -42,16 +67,18 @@ export default function AuthModal() {
         if (error) throw error;
 
         if (data.user) {
-          const { error: userError } = await supabase.from('lb_users').insert([
-            {
-              id: data.user.id,
-              email: data.user.email,
-              name: "Người dùng mới"
-            }
-          ]);
+          // DB trigger handle_new_user() đã tự tạo record với status='active'.
+          // Cần update lại status thành 'inactive' vì chưa xác thực email.
+          const { error: userError } = await supabase
+            .from('lb_users')
+            .update({
+              name: "Người dùng mới",
+              status: "inactive"
+            })
+            .eq('id', data.user.id);
 
           if (userError) {
-            console.error("Lỗi khi lưu vào bảng lb_users:", userError);
+            console.error("Lỗi khi cập nhật lb_users:", userError);
           }
         }
 

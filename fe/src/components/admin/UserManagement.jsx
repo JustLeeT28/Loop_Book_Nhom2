@@ -7,6 +7,7 @@ export default function UserManagement() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [viewingUser, setViewingUser] = useState(null);
 
   // Load users from Supabase
   useEffect(() => {
@@ -50,8 +51,8 @@ export default function UserManagement() {
       // Refresh users list
       const filters = filterStatus !== "all" ? { status: filterStatus } : {};
       if (searchTerm) filters.search = searchTerm;
-      const data = await getUsers(filters);
-      const mappedData = data.map(user => ({
+      const result = await getUsers(filters);
+      const mappedData = (result.data || []).map(user => ({
         id: user.id,
         name: user.name,
         email: user.email,
@@ -73,8 +74,8 @@ export default function UserManagement() {
       // Refresh users list
       const filters = filterStatus !== "all" ? { status: filterStatus } : {};
       if (searchTerm) filters.search = searchTerm;
-      const data = await getUsers(filters);
-      const mappedData = data.map(user => ({
+      const result = await getUsers(filters);
+      const mappedData = (result.data || []).map(user => ({
         id: user.id,
         name: user.name,
         email: user.email,
@@ -106,6 +107,82 @@ export default function UserManagement() {
       case "suspended": return "Đã khóa";
       default: return status;
     }
+  };
+
+  // User detail modal
+  const renderUserModal = () => {
+    if (!viewingUser) return null;
+
+    return (
+      <div
+        style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backgroundColor: "rgba(0,0,0,0.5)",
+        }}
+        onClick={() => setViewingUser(null)}
+      >
+        <div
+          style={{
+            background: "#fff", borderRadius: "12px",
+            padding: "28px", maxWidth: "480px", width: "90%",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#0f172a" }}>
+              Chi Tiết Người Dùng
+            </h2>
+            <button
+              onClick={() => setViewingUser(null)}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: "22px", color: "#94a3b8", padding: "4px",
+              }}
+            >
+              &times;
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "12px 16px", fontSize: "14px" }}>
+            <span style={{ color: "#64748b", fontWeight: 500 }}>ID</span>
+            <span style={{ color: "#0f172a" }}>{viewingUser.id}</span>
+
+            <span style={{ color: "#64748b", fontWeight: 500 }}>Tên</span>
+            <span style={{ color: "#0f172a", fontWeight: 600 }}>{viewingUser.name}</span>
+
+            <span style={{ color: "#64748b", fontWeight: 500 }}>Email</span>
+            <span style={{ color: "#0f172a" }}>{viewingUser.email}</span>
+
+            <span style={{ color: "#64748b", fontWeight: 500 }}>Số Listing</span>
+            <span style={{ color: "#0f172a" }}>{viewingUser.listings}</span>
+
+            <span style={{ color: "#64748b", fontWeight: 500 }}>Giao Dịch</span>
+            <span style={{ color: "#0f172a" }}>{viewingUser.sales}</span>
+
+            <span style={{ color: "#64748b", fontWeight: 500 }}>Trạng Thái</span>
+            <span>
+              <span className={`admin-badge ${statusColor(viewingUser.status)}`}>
+                {statusText(viewingUser.status)}
+              </span>
+            </span>
+
+            <span style={{ color: "#64748b", fontWeight: 500 }}>Ngày Tham Gia</span>
+            <span style={{ color: "#0f172a" }}>{viewingUser.joinDate}</span>
+          </div>
+
+          <div style={{ marginTop: "24px", textAlign: "right" }}>
+            <button
+              className="admin-btn admin-btn-secondary"
+              onClick={() => setViewingUser(null)}
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -196,7 +273,11 @@ export default function UserManagement() {
                 <td>{user.joinDate}</td>
                 <td>
                   <div style={{ display: "flex", gap: "8px" }}>
-                    <button className="admin-btn admin-btn-secondary" style={{ padding: "6px 10px", fontSize: "12px" }}>
+                    <button 
+                      className="admin-btn admin-btn-secondary" 
+                      style={{ padding: "6px 10px", fontSize: "12px" }}
+                      onClick={() => setViewingUser(user)}
+                    >
                       Xem
                     </button>
                     {user.status === "active" && (
@@ -228,6 +309,9 @@ export default function UserManagement() {
       <div style={{ marginTop: "16px", color: "#56647e", fontSize: "14px" }}>
         Hiển thị {users.length} người dùng
       </div>
+
+      {/* User Detail Modal */}
+      {renderUserModal()}
     </div>
   );
 }
