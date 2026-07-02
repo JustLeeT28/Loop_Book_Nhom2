@@ -19,7 +19,7 @@ const TABS = [
   { id: "service", label: "Gói dịch vụ" },
 ];
 
-function TransactionCard({ item, isCompleted, isBuyer, onConfirm }) {
+function TransactionCard({ item, isCompleted, isBuyer, role, onConfirm }) {
   const status = statusConfig[item.status] || DEFAULT_STATUS;
   const [confirming, setConfirming] = useState(false);
 
@@ -55,7 +55,11 @@ function TransactionCard({ item, isCompleted, isBuyer, onConfirm }) {
       </div>
 
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
-        <span className={`font-bold text-sm ${isCompleted ? "text-green-600" : "text-slate-900"}`}>{item.amount}</span>
+        <span className={`font-bold text-sm ${
+          role === "buy" ? "text-red-600" : role === "sell" ? "text-green-600" : isCompleted ? "text-green-600" : "text-slate-900"
+        }`}>
+          {role === "buy" ? `-${item.amount}` : item.amount}
+        </span>
         <div className="flex gap-2">
           {showConfirmButton && (
             <button
@@ -356,6 +360,7 @@ export default function TransactionsScreen() {
                   item={item}
                   isCompleted={item.isCompleted}
                   isBuyer={item.role === "buy"}
+                  role={item.role}
                   onConfirm={async (id) => {
                     await transactionApi.confirmTransaction(id, token);
                     setAllTransactions(prev => prev.map(t => {
